@@ -37,42 +37,44 @@
 #include "nrf_error.h"
 
 
-#define CENTRAL_LINK_COUNT       		0  /**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
-#define PERIPHERAL_LINK_COUNT    		0  /**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
-
-#define IS_SRVC_CHANGED_CHARACT_PRESENT 0 /**< 不懂Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
-
-#define APP_CFG_NON_CONN_ADV_TIMEOUT    0 /**< Time for which the device must be advertising in non-connectable mode (in seconds). 0 disables timeout. */
-#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(100, UNIT_0_625_MS) /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
-#define APP_COMPANY_IDENTIFIER          0x0059  /**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
-
+#define CENTRAL_LINK_COUNT       		0  			/**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
+#define PERIPHERAL_LINK_COUNT    		0  			/**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
+#define IS_SRVC_CHANGED_CHARACT_PRESENT 0 			/**< 不懂Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 #define DEAD_BEEF                       0xDEADBEEF  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
-//不知道设置为0004和4000有什么区别，led看起来都闪的一样快。
-//#define SCAN_INTERVAL           0x00A0                          /**< Determines scan interval in units of 0.625 millisecond. */
-#define SCAN_INTERVAL           0x0800   //500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
-//#define SCAN_WINDOW             0x0050                          /**< Determines scan window in units of 0.625 millisecond. */
-#define SCAN_WINDOW             0x0800   //The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
-#define SCAN_ACTIVE             0                               /**< If 1, performe active scanning (scan requests). */
-#define SCAN_SELECTIVE          0                               /**< If 1, ignore unknown devices (non whitelisted). */
+#define APP_CFG_NON_CONN_ADV_TIMEOUT    0 			/**< Time for which the device must be advertising in non-connectable mode (in seconds). 0 disables timeout. */
+#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(100, UNIT_0_625_MS) /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
+#define APP_COMPANY_IDENTIFIER          0x0059  	/**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
+
+													//不知道设置为0004和4000有什么区别，led看起来都闪的一样快。
+#define SCAN_INTERVAL           0x0100   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
+#define SCAN_WINDOW             0x0100   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
+#define SCAN_ACTIVE             0        			/**< If 1, performe active scanning (scan requests). */
+#define SCAN_SELECTIVE          0        			/**< If 1, ignore unknown devices (non whitelisted). */
 #define SCAN_TIMEOUT            0x0000
 
-
-#define APP_TIMER_PRESCALER             0   /**< Value of the RTC1 PRESCALER register. */
-#define APP_TIMER_OP_QUEUE_SIZE         4   /**< Size of timer operation queues. */
+#define APP_TIMER_PRESCALER             0   		/**< Value of the RTC1 PRESCALER register. */
+#define APP_TIMER_OP_QUEUE_SIZE         4   		/**< Size of timer operation queues. */
 #define SYNC_BEACON_COUNT_PRINTOUT_INTERVAL APP_TIMER_TICKS(1000, APP_TIMER_PRESCALER)
+APP_TIMER_DEF(m_sync_count_timer_id);
 
-static ble_gap_adv_params_t m_adv_params;   /**< Parameters to be passed to the stack when starting advertising. */
+
 static bool 							started_bro_sca				= false;
 volatile bool 							first_time					= true;
 extern volatile bool 					want_scan;
+extern const uint8_t 					SELF_DEVICE_NUMBER;
 
 
-APP_TIMER_DEF(m_sync_count_timer_id);
+const ble_gap_adv_params_t m_adv_params =
+  {
+	.type        					= BLE_GAP_ADV_TYPE_ADV_NONCONN_IND,					// Undirected advertisement.
+	//.p_peer_addr->addr_type 		= BLE_GAP_ADDR_TYPE_RANDOM_STATIC,
+	.p_peer_addr					= NULL,												// 我觉得null是不是默认就是static的address？
+	.fp          					= BLE_GAP_ADV_FP_ANY,
+	.interval    					= NON_CONNECTABLE_ADV_INTERVAL,						// 虽然这个最小值时100ms，但是你可以通过timer以更快的频率启动关闭广播。
+	.timeout     					= APP_CFG_NON_CONN_ADV_TIMEOUT
+  };
 
-/**
- * @brief Parameters used when scanning.   active scan means asking for scan response packet
- */
 const ble_gap_scan_params_t m_scan_params =
   {
     .active      = SCAN_ACTIVE,
@@ -82,6 +84,12 @@ const ble_gap_scan_params_t m_scan_params =
     .window      = SCAN_WINDOW,
     .timeout     = SCAN_TIMEOUT
   };
+
+
+
+void advertising_start(void);
+void scanning_start(void);
+
 
 
 void HardFault_Handler(void)  //重写HardFault_Handler
@@ -178,12 +186,22 @@ static void sync_beacon_count_printout_handler(void * p_context)
  */
 static void advertising_init(void)
 {
-    uint32_t      err_code;
-    ble_advdata_t advdata;
-    uint8_t       flags 						= BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
-
-    ble_advdata_manuf_data_t manuf_specific_data;
-    uint8_t data[] 								= "xxxxx"; // Our data to adverise。 scanner上显示的0x串中，最后是00，表示结束。
+    uint32_t     		 		err_code;
+    ble_advdata_t 				advdata;
+    uint8_t       				flags 					= BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
+    ble_advdata_manuf_data_t 	manuf_specific_data;
+    uint8_t 					data[] 					= "xxxxx"; // Our data to adverise。 scanner上显示的0x串中，最后是00，表示结束。
+    uint8_t 					out_data[12]			={0x0b, 0xff,
+    													  0x00,
+    													  0x00,
+														  0x00,
+														  0x00,
+														  SELF_DEVICE_NUMBER,
+														  0x00,
+														  0x00,
+														  0x00,
+														  0x00,
+														  0x00};
 
     manuf_specific_data.company_identifier 		= APP_COMPANY_IDENTIFIER;
     manuf_specific_data.data.p_data 			= data;
@@ -199,22 +217,12 @@ static void advertising_init(void)
     err_code = ble_advdata_set(&advdata, NULL);
     APP_ERROR_CHECK(err_code);
 
-    //sd_ble_gap_adv_data_set(pp_data, sizeof(pp_data), NULL, 0); // 用这句话来躲避掉flag
 
-    // Initialize advertising parameters (used when starting advertising).
-    memset(&m_adv_params, 0, sizeof(m_adv_params));													// 把结构体里的所有变量初始为0
-
-    m_adv_params.type        					= BLE_GAP_ADV_TYPE_ADV_NONCONN_IND;					// Undirected advertisement.
-    //m_adv_params.p_peer_addr->addr_type 		= BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
-    m_adv_params.p_peer_addr					= NULL;	// 我觉得null是不是默认就是static的address？
-    m_adv_params.fp          					= BLE_GAP_ADV_FP_ANY;
-    m_adv_params.interval    					= NON_CONNECTABLE_ADV_INTERVAL;
-    m_adv_params.timeout     					= APP_CFG_NON_CONN_ADV_TIMEOUT;
+    err_code = sd_ble_gap_adv_data_set(out_data, sizeof(out_data), NULL, 0); // 用这句话来躲避掉flag
+    APP_ERROR_CHECK(err_code);
 }
 
 
-/**@brief Function for starting advertising.
- */
 void advertising_start(void)
 {
     uint32_t err_code;

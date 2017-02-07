@@ -1,15 +1,20 @@
 
+
+
+#include <stdlib.h>
 #include "ble_gap.h"
 #include "ble.h"
 #include "nrf_log.h"
 #include "app_error.h"
 
-#define 	SELF_DEVICE_NUMBER 	1
+const uint8_t 											SELF_DEVICE_NUMBER  = 1;
+
 extern volatile bool 									first_time;
 volatile bool 											want_scan 		 	= false;
 static uint8_t											self_device_level 	= 0;
 static bool												need_broadcast 		= false;
 static bool												alarm_mode 			= false;
+static uint8_t 											count				= 2;
 
 static uint8_t	in_device_number			= 0;
 static uint8_t	in_device_level				= 0;
@@ -18,7 +23,7 @@ static uint8_t	in_alarm_relay_success		= 0;
 static uint8_t	in_alarm_number				= 0;
 static uint8_t	in_alarm_running			= 0;
 static uint8_t	in_alarm_tx_success			= 0;
-static uint8_t	in_first_listener			= 0;
+static uint8_t	in_who_found_the_alarm		= 0;
 
 static uint8_t	out_device_number			= 0;
 static uint8_t	out_device_level			= 0;
@@ -27,7 +32,7 @@ static uint8_t	out_alarm_relay_success		= 0;
 static uint8_t	out_alarm_number			= 0;
 static uint8_t	out_alarm_running			= 0;
 static uint8_t	out_alarm_tx_success		= 0;
-static uint8_t	out_first_listener			= 0;
+static uint8_t	out_who_found_the_alarm		= 0;
 
 
 void advertising_start(void);
@@ -42,7 +47,19 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
             NRF_EGU3->EVENTS_TRIGGERED[1] = 0;
             (void) NRF_EGU3->EVENTS_TRIGGERED[1];
 
-            //NRF_LOG_INFO("EGU[1]\r\n");
+            if(count%2)
+            {
+            	NRF_TIMER2->CC[0] = (0xFFFF) - (rand()%10000) ;
+            }
+
+            count++;
+
+            if(count == 200)
+            {
+            	count = 2;
+            }
+
+
 
 			if(first_time)
 			{
@@ -105,7 +122,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 				while(a <= (index+field_length))
 				{
 					in_data[b] = p_data[a];
-					NRF_LOG_INFO("p_data = %x\r\n", in_data[a]);
+					NRF_LOG_INFO("in_data = %x\r\n", in_data[a]);
 					a++;
 					b++;
 				}
@@ -119,7 +136,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 				in_device_level					= in_data[7];
 
 				in_alarm_relay_success		 	= in_data[8];
-				in_first_listener				= in_data[9];
+				in_who_found_the_alarm			= in_data[9];
 
 /************************************************ 开始判断 *********************************************************************/
 
@@ -132,14 +149,15 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 					out_alarm_rssi = p_adv_report->rssi;
 					out_alarm_number = in_alarm_number;
 					out_alarm_tx_success = 1;
-					out_first_listener = SELF_DEVICE_NUMBER;
+					out_who_found_the_alarm = SELF_DEVICE_NUMBER;
 				}else
 				{
 					if(in_alarm_relay_success)
 					{
 						// TODO: stop broadcast and change to normal mode
 						alarm_mode = false;
-						return;
+						NRF_LOG_INFO("relay success\r\n");
+						//return;
 					}else
 					{
 						//if((in_device_level >= self_device_level) || (maybe_i_need_relay>=6)) // 如果收到相同sender的相同的信息超过6次，那就帮他转播
@@ -150,7 +168,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 							out_device_number = SELF_DEVICE_NUMBER;
 							out_device_level  = self_device_level;
 							out_alarm_relay_success = 1;
-							out_first_listener = in_first_listener;
+							out_who_found_the_alarm = in_who_found_the_alarm;
 						}
 					}
 				}
@@ -164,17 +182,17 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 				out_data[0] = field_length;
 				out_data[1] = field_type;
 				out_data[2] = out_alarm_number;
-				out_data[3] = out_alarm_running; // 这个位置是moving node的独有位置
+				out_data[3] = out_alarm_running; 		// 这个位置是moving node的独有位置
 				out_data[4] = out_alarm_tx_success;
 				out_data[5] = out_alarm_rssi;
 				out_data[6] = out_device_number;
-				out_data[7] = out_device_level;
-				out_data[8] = out_alarm_relay_success; // 但你收到别人的relay是再设置这个值。
-				out_data[9] = out_first_listener;
+				out_data[7] = out_device_level;			// center 的 level是1
+				out_data[8] = out_alarm_relay_success; 	// 但你收到别人的relay是再设置这个值。
+				out_data[9] = out_who_found_the_alarm;
 
 				sd_ble_gap_adv_data_set(out_data, sizeof(out_data), NULL, 0);
 
-				NRF_LOG_INFO("fdasfadsfafdas");
+				NRF_LOG_INFO("fdasfadsfafdas\r\n");
 
 				alarm_mode = true;
 				return;

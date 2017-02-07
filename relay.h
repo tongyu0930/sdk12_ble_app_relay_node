@@ -6,8 +6,6 @@
 #include "nrf.h"
 
 
-
-
 typedef struct
 {
     uint8_t          bit0;
@@ -29,3 +27,4 @@ void get_adv_data(ble_evt_t * p_ble_evt);
 
 
 #endif
+
