@@ -64,7 +64,6 @@
 
 static ble_gap_adv_params_t m_adv_params;   /**< Parameters to be passed to the stack when starting advertising. */
 static bool 							started_bro_sca				= false;
-volatile bool 							want_shift 					= false;
 volatile bool 							first_time					= true;
 extern volatile bool 					want_scan;
 
@@ -205,8 +204,9 @@ static void advertising_init(void)
     // Initialize advertising parameters (used when starting advertising).
     memset(&m_adv_params, 0, sizeof(m_adv_params));													// 把结构体里的所有变量初始为0
 
-    m_adv_params.type        					= BLE_GAP_ADV_TYPE_ADV_NONCONN_IND;
-    m_adv_params.p_peer_addr 					= NULL;                             				// Undirected advertisement.
+    m_adv_params.type        					= BLE_GAP_ADV_TYPE_ADV_NONCONN_IND;					// Undirected advertisement.
+    //m_adv_params.p_peer_addr->addr_type 		= BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
+    m_adv_params.p_peer_addr					= NULL;	// 我觉得null是不是默认就是static的address？
     m_adv_params.fp          					= BLE_GAP_ADV_FP_ANY;
     m_adv_params.interval    					= NON_CONNECTABLE_ADV_INTERVAL;
     m_adv_params.timeout     					= APP_CFG_NON_CONN_ADV_TIMEOUT;
@@ -331,14 +331,11 @@ void GPIOTE_IRQHandler(void)
     	nrf_delay_us(200000);
         NRF_GPIOTE->EVENTS_IN[3] = 0;
 
-        if(!want_shift)
-        {
-        	want_shift = true;
         	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
         	NRF_GPIO->OUT ^= (1 << 20);
         	NRF_GPIOTE->TASKS_OUT[0];
 			NRF_LOG_INFO("shift %d \r\n", rand()%100);
-         }
+
     }
 }
 
