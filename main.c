@@ -63,6 +63,7 @@ static bool 							started_bro_sca				= false;
 volatile bool 							first_time					= true;
 extern volatile bool 					want_scan;
 extern const uint8_t 					SELF_DEVICE_NUMBER;
+static uint32_t							count						= 0;
 
 
 const ble_gap_adv_params_t m_adv_params =
@@ -89,6 +90,7 @@ const ble_gap_scan_params_t m_scan_params =
 
 void advertising_start(void);
 void scanning_start(void);
+void create_dynamic_storage(void);
 
 
 
@@ -192,16 +194,16 @@ static void advertising_init(void)
     ble_advdata_manuf_data_t 	manuf_specific_data;
     uint8_t 					data[] 					= "xxxxx"; // Our data to adverise。 scanner上显示的0x串中，最后是00，表示结束。
     uint8_t 					out_data[12]			={0x0b, 0xff,
-    													  0x00,
-    													  0x00,
-														  0x00,
-														  0x00,
+    													  0x01,
+    													  0x02,
+														  0x03,
+														  0x04,
 														  SELF_DEVICE_NUMBER,
-														  0x00,
-														  0x00,
-														  0x00,
-														  0x00,
-														  0x00};
+														  0x05,
+														  0x06,
+														  0x07,
+														  0x08,
+														  0x09};
 
     manuf_specific_data.company_identifier 		= APP_COMPANY_IDENTIFIER;
     manuf_specific_data.data.p_data 			= data;
@@ -247,6 +249,7 @@ void scanning_start(void)
 static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 {
     get_adv_data(p_ble_evt);
+    count++;
 }
 
 
@@ -308,7 +311,7 @@ void GPIOTE_IRQHandler(void)
     {
     	nrf_delay_us(200000);
         NRF_GPIOTE->EVENTS_IN[2] = 0;
-
+NRF_LOG_INFO("count = %d\r\n", count);
         if(!started_bro_sca)
 		{
 			NRF_LOG_INFO("start broadcast and scan\r\n");
@@ -438,6 +441,8 @@ int main(void)
     APP_ERROR_CHECK(err_code);
 
     gpio_configure(); // 注意gpio和timesync是相对独立的，同步时钟本质上不需要gpio
+
+    create_dynamic_storage();
 
     // 设置并开启 timer2 这个就是被同步的timer
 	NRF_TIMER2->TASKS_STOP  = 1;
