@@ -193,17 +193,18 @@ static void advertising_init(void)
     uint8_t       				flags 					= BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
     ble_advdata_manuf_data_t 	manuf_specific_data;
     uint8_t 					data[] 					= "xxxxx"; // Our data to adverise。 scanner上显示的0x串中，最后是00，表示结束。
-    uint8_t 					out_data[12]			={0x0b, 0xff,
-    													  0x01,
-    													  0x02,
-														  0x03,
-														  0x04,
-														  SELF_DEVICE_NUMBER,
-														  0x05,
-														  0x06,
-														  0x07,
-														  0x08,
-														  0x09};
+    uint8_t 					out_data[12]			={0x0b,								//0
+    													  0xff,								//1
+    													  0x00,								//2
+    													  0x00,								//3
+														  0x00,								//4
+														  0x04,								//5
+														  0x08,								//6
+														  0x05,								//7
+														  SELF_DEVICE_NUMBER,				//8
+														  0x04,								//9
+														  0x08,								//10
+														  0x03};							//11
 
     manuf_specific_data.company_identifier 		= APP_COMPANY_IDENTIFIER;
     manuf_specific_data.data.p_data 			= data;
@@ -442,7 +443,7 @@ int main(void)
 
     gpio_configure(); // 注意gpio和timesync是相对独立的，同步时钟本质上不需要gpio
 
-    create_dynamic_storage();
+
 
     // 设置并开启 timer2 这个就是被同步的timer
 	NRF_TIMER2->TASKS_STOP  = 1;
@@ -469,6 +470,8 @@ int main(void)
 	NRF_PPI->CH[0].EEP = (uint32_t) &NRF_TIMER2->EVENTS_COMPARE[0];		// 为什么用ppi时不用清除compare event？：EVENTS_COMPARE[0]＝0
 	NRF_PPI->CH[0].TEP = (uint32_t) &NRF_GPIOTE->TASKS_OUT[0];
 	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
+
+	create_dynamic_storage();
 
 
     for (;; ) 																	// Enter main loop.
