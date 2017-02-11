@@ -34,23 +34,15 @@ static uint8_t	in_target_level							= 0;
 
 
 
-struct device_storage * 	storage;
-struct device_storage * 	device_pointer;
-struct device_storage * 	device_pointer2;
-struct event_storage * 		event_pointer;
-struct event_storage * 		event_pointer2;
-
-struct event_storage									// 子链表
+struct storage * 		storage;
+struct storage * 		event_pointer;
+struct storage * 		event_pointer2;
+struct storage
 {
 			uint8_t 			data[12];
-	struct 	event_storage * 	next_event_storage;
+	struct 	storage * 			next_storage;
 };
 
-struct device_storage									// 链表
-{
-	struct event_storage * 		event;
-	struct device_storage * 	next_device_storage;
-};
 
 
 
@@ -68,9 +60,8 @@ static enum
 
 void advertising_start(void);
 void scanning_start(void);
-void check_device_number(uint8_t input);
-void check_event_number(uint8_t input1);
-void event_search(uint8_t input1);
+void check_storage(uint8_t input_device_number, uint8_t input_event_number);
+void check_storage_self_event(uint8_t input_self_event_number);
 
 
 
@@ -133,87 +124,45 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 
 void init_dynamic_storage(void)
 {
-	storage 									= (struct device_storage *)calloc(1, sizeof(struct device_storage));
-	struct event_storage * new_event_storage	= (struct event_storage *)calloc(1, sizeof(struct event_storage));
-	memcpy(new_event_storage, init, sizeof(init));
-	new_event_storage->next_event_storage 		= NULL;
-	storage->next_device_storage 				= NULL;
-	storage->event 								= new_event_storage;
+	storage 					= (struct storage *)calloc(1, sizeof(struct storage));
+	memcpy(storage->data, init, sizeof(init));
+	storage->next_storage 		= NULL;
 }
 
 
-void check_device_number(uint8_t input)	// function for checking if the device in the dynamic storage
+void check_storage(uint8_t input_device_number, uint8_t input_event_number)	// function for checking if the device in the dynamic storage
 {
-	struct device_storage* temporary_pointer = storage;
-	struct device_storage* temporary_pointer_before;
-	//memset(&temporary_pointer_before, 0, sizeof(temporary_pointer_before));
+	struct storage* temporary_pointer = storage;
+	struct storage* temporary_pointer_before;
 
 	temporary_pointer_before = temporary_pointer;
 
-	while((temporary_pointer != NULL) && (temporary_pointer->event->data[3] != input))  // in_data[3] is in_this_device_tx_success
+	while((temporary_pointer != NULL) && ((temporary_pointer->data[3] != input_device_number) || (temporary_pointer->data[4] != input_event_number)))
 	{
 		temporary_pointer_before = temporary_pointer;
-		temporary_pointer = temporary_pointer->next_device_storage;						// 子列表里第一行里有device number，那就行了
+		temporary_pointer = temporary_pointer->next_storage;						// 子列表里第一行里有device number，那就行了
 	}
 
-	device_pointer = temporary_pointer_before;
+	event_pointer = temporary_pointer_before;
 
 	return;
 }
 
 
-void check_event_number(uint8_t input1)
+void check_storage_self_event(uint8_t input_self_event_number)	// function for checking if the device in the dynamic storage
 {
-	struct event_storage* temporary_event_pointer = device_pointer->next_device_storage->event;
-	struct event_storage* temporary_event_pointer_before;
-	//memset(&temporary_event_pointer_before, 0, sizeof(temporary_event_pointer_before));
-
-	temporary_event_pointer_before = temporary_event_pointer;
-
-
-	while((temporary_event_pointer != NULL) && (temporary_event_pointer->data[4] != input1))
-	{
-		temporary_event_pointer_before = temporary_event_pointer;
-		temporary_event_pointer = temporary_event_pointer->next_event_storage;
-	}
-
-	event_pointer = temporary_event_pointer_before;
-
-	return;
-}
-
-
-void event_search(uint8_t input1)
-{
-	struct device_storage* temporary_pointer = storage;
-	struct device_storage* temporary_pointer_before;
-	struct event_storage* temporary_event_pointer = storage->event;
-	struct event_storage* temporary_event_pointer_before;
-	//memset(&temporary_event_pointer_before, 0, sizeof(temporary_event_pointer_before));
+	struct storage* temporary_pointer = storage;
+	struct storage* temporary_pointer_before;
 
 	temporary_pointer_before = temporary_pointer;
-	temporary_event_pointer_before = temporary_event_pointer;
 
-	while((temporary_pointer != NULL) && (temporary_event_pointer->data[10] != input1))  // in_data[3] is in_this_device_tx_success
+	while((temporary_pointer != NULL) && (temporary_pointer->data[10] != input_self_event_number))
 	{
-		temporary_event_pointer = temporary_pointer->event;
-
-		while((temporary_event_pointer != NULL) && (temporary_event_pointer->data[10] != input1))
-		{
-			temporary_event_pointer_before = temporary_event_pointer; //temporary_event_pointer_before 不会是结尾，因为temporary_event_pointer不会停在另一个device的开头的话
-			temporary_event_pointer = temporary_event_pointer->next_event_storage;
-		}
-
-		if(temporary_event_pointer == NULL)
-		{
-			temporary_pointer_before = temporary_pointer;
-			temporary_pointer = temporary_pointer->next_device_storage;
-		}
-
+		temporary_pointer_before = temporary_pointer;
+		temporary_pointer = temporary_pointer->next_storage;						// 子列表里第一行里有device number，那就行了
 	}
 
-	device_pointer = temporary_pointer_before;
-	event_pointer = temporary_event_pointer_before;
+	event_pointer = temporary_pointer_before;
 
 	return;
 }
@@ -271,38 +220,21 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 
 				if(in_this_device_tx_success == SELF_DEVICE_NUMBER)	// 你存储的数据里的event number都是你自己生成的，所以不会重复。
 				{
-					event_search(in_this_event_tx_success);
+					check_storage_self_event(in_this_event_tx_success);
 
-					if(event_pointer->next_event_storage != NULL) // 如果这个event确实存在
+					if(event_pointer->next_storage != NULL) // 如果这个event确实存在
 					{
-						if(event_pointer->next_event_storage->next_event_storage == NULL) //  如果这个event为它所在的list的最后一个
+						if(event_pointer->next_storage->next_storage == NULL) //  如果这个event为它所在的list的最后一个
 						{
-							free(event_pointer->next_event_storage);
-							event_pointer->next_event_storage = NULL;	// 补上NULL
+							free(event_pointer->next_storage);
+							event_pointer->next_storage = NULL;	// 补上NULL
 							NRF_LOG_INFO("last event %d freed\r\n", in_this_event_tx_success);
 						}else
 						{
-							event_pointer2 = event_pointer->next_event_storage->next_event_storage;
-							free(event_pointer->next_event_storage);
-							event_pointer->next_event_storage = event_pointer2; // 接上
+							event_pointer2 = event_pointer->next_storage->next_storage;
+							free(event_pointer->next_storage);
+							event_pointer->next_storage = event_pointer2; // 接上
 							NRF_LOG_INFO("middle event %d freed\r\n", in_this_event_tx_success);
-						}
-
-
-						if(device_pointer->next_device_storage->event->next_event_storage == NULL)	// 如果这个device的list空了
-						{
-							if(device_pointer->next_device_storage->next_device_storage == NULL)	// 如果这个device list 后面没有device了
-							{
-								NRF_LOG_INFO("last device %d freed\r\n", device_pointer->next_device_storage->event->data[3]);
-								free(device_pointer->next_device_storage);
-								device_pointer->next_device_storage = NULL; // 补上NULL
-							}else
-							{
-								NRF_LOG_INFO("middle device %d freed\r\n", device_pointer->next_device_storage->event->data[3]);
-								device_pointer2 = device_pointer->next_device_storage->next_device_storage;
-								free(device_pointer->next_device_storage);
-								device_pointer->next_device_storage = device_pointer2; // 接上
-							}
 						}
 					}else
 					{
@@ -353,85 +285,44 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 
 // 如果你收到一个新event，那么device number和event number都被放到in_this_device_tx_success 和 in_this_event_tx_success 里了，然后储存起来，所以这个confirm就是packet来过的证据，就可以判断是不是扫描到了重复packet
 
-if(self_event_number == 200)
-{
-	self_event_number = 1;
-}
-
-
-				check_device_number(in_device_number); // 搜寻目标其实是in_this_device_tx_success，因为你把in_device_number转到那里了
-
-				if(device_pointer->next_device_storage == NULL)
+				if(self_event_number == 200)
 				{
-					// create new device.
-					struct device_storage * new_device_storage 	= (struct device_storage *)calloc(1, sizeof(struct device_storage));
-					struct event_storage * new_event_storage	= (struct event_storage *)calloc(1, sizeof(struct event_storage));
-					struct event_storage * new_event_storage_0	= (struct event_storage *)calloc(1, sizeof(struct event_storage));	//每个新device最初都接着一个空event，为了防止temporary_event_pointer_before找不到地址。
-					new_device_storage->next_device_storage = NULL;
-					new_event_storage->next_event_storage = NULL;
-					memcpy(new_event_storage->data, in_data, sizeof(in_data));
-					memcpy(new_event_storage_0, init, sizeof(init));
-					new_event_storage_0->data[3] = in_device_number;
+					self_event_number = 1;
+				}
+
+
+				check_storage(in_device_number, in_event_number); // 搜寻目标其实是in_this_device_tx_success，因为你把in_device_number转到那里了
+
+				if(event_pointer->next_storage == NULL)
+				{
+
+					struct storage * new_storage 	= (struct storage *)calloc(1, sizeof(struct storage));
+					new_storage->next_storage = NULL;
+					memcpy(new_storage->data, in_data, sizeof(in_data));
 
 					if(in_ALARM_NUMBER != 0) // if == 0, then do nothing, because you already copied 0 to output data.
 					{
-						new_event_storage->data[2] = 0;
-						new_event_storage->data[3] = in_ALARM_NUMBER; // alarm node 不用check in_data4，所以说data4的值是多少无所谓。
-						new_event_storage->data[5] = in_ALARM_NUMBER;
-						new_event_storage->data[6] = p_adv_report->rssi;
-						new_event_storage->data[7] = SELF_DEVICE_NUMBER;
+						new_storage->data[2] = 0;
+						new_storage->data[3] = in_ALARM_NUMBER; // alarm node 不用check in_data4，所以说data4的值是多少无所谓。
+						new_storage->data[5] = in_ALARM_NUMBER;
+						new_storage->data[6] = p_adv_report->rssi;
+						new_storage->data[7] = SELF_DEVICE_NUMBER;
 					}
-					new_event_storage->data[3] = in_device_number;
-					new_event_storage->data[4] = in_event_number;
+					new_storage->data[3] = in_device_number;
+					new_storage->data[4] = in_event_number;
 
-					new_event_storage->data[8] = SELF_DEVICE_NUMBER;
-					new_event_storage->data[9] = self_device_level;
-					new_event_storage->data[10] = self_event_number++;
-					new_event_storage->data[11] = 1;
+					new_storage->data[8] = SELF_DEVICE_NUMBER;
+					new_storage->data[9] = self_device_level;
+					new_storage->data[10] = self_event_number++;
+					new_storage->data[11] = 1;
 
-					new_event_storage_0->next_event_storage = new_event_storage;					// 接起来
-					new_device_storage->event = new_event_storage_0;			 					 // 接起来
-					device_pointer->next_device_storage 		= new_device_storage; 				// 接起来
-					//device_pointer->next_device_storage->event 	= new_event_storage;			 	 // 接起来
+					event_pointer->next_storage = new_storage; 				// 接起来
 
-					NRF_LOG_INFO("new device: %d and new event: %d event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
+					NRF_LOG_INFO("NEW!!! device: %d and event: %d self_event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
 
 				}else
 				{
-					check_event_number(in_event_number);
-
-					if(event_pointer->next_event_storage == NULL)
-					{
-						struct event_storage * new_event_storage	= (struct event_storage *)calloc(1, sizeof(struct event_storage));
-						new_event_storage->next_event_storage = NULL;
-						memcpy(new_event_storage->data, in_data, sizeof(in_data));
-
-						if(in_ALARM_NUMBER != 0) // if == 0, then do nothing, because you already copied 0 to output data.
-						{
-							new_event_storage->data[2] = 0;
-							new_event_storage->data[3] = in_ALARM_NUMBER; // alarm node 不用check in_data4，所以说data4的值是多少无所谓。
-							new_event_storage->data[5] = in_ALARM_NUMBER;
-							new_event_storage->data[6] = p_adv_report->rssi;
-							new_event_storage->data[7] = SELF_DEVICE_NUMBER;
-						}
-						new_event_storage->data[3] = in_device_number;
-						new_event_storage->data[4] = in_event_number;
-
-						new_event_storage->data[8] = SELF_DEVICE_NUMBER;
-						new_event_storage->data[9] = self_device_level;
-						new_event_storage->data[10] = self_event_number++;
-						new_event_storage->data[11] = 1;
-
-						event_pointer->next_event_storage = new_event_storage; // 接起来
-
-						NRF_LOG_INFO("old device: %d and new event: %d event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
-
-					}else
-					{
-						NRF_LOG_INFO("duplicated device: %d and event: %d\r\n", in_device_number, in_event_number);
-
-						//return;
-					}
+					NRF_LOG_INFO("duplicated device: %d and event: %d\r\n", in_device_number, in_event_number);
 				}
 
 
@@ -470,8 +361,22 @@ if(self_event_number == 200)
 
 
 
-				//return;
+				return;
 			}
 			index += field_length + 1;
 	    }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
