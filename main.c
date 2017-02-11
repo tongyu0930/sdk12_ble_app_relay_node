@@ -196,14 +196,14 @@ static void advertising_init(void)
     uint8_t 					out_data[12]			={0x0b,								//0
     													  0xff,								//1
     													  0x00,								//2
-    													  0x00,								//3
-														  0x00,								//4
+    													  0x01,								//3	//tx_device_success
+														  0x06,								//4	//tx_event_success
 														  0x04,								//5
 														  0x08,								//6
 														  0x05,								//7
 														  SELF_DEVICE_NUMBER,				//8
 														  0x04,								//9
-														  0x08,								//10
+														  0x02,								//10 //event_number
 														  0x03};							//11
 
     manuf_specific_data.company_identifier 		= APP_COMPANY_IDENTIFIER;

@@ -9,7 +9,7 @@
 #include "relay.h"
 
 
-const uint8_t 											SELF_DEVICE_NUMBER  = 0x02;
+const uint8_t 											SELF_DEVICE_NUMBER  = 0x05;
 extern volatile bool 									first_time;
 volatile bool 											want_scan 		 	= false;
 static uint8_t											self_device_level 	= 0;
@@ -36,7 +36,9 @@ static uint8_t	in_target_level							= 0;
 //struct device_storage * device_foot;
 struct device_storage * 	storage;
 struct device_storage * 	device_pointer;
+struct device_storage * 	device_pointer2;
 struct event_storage * 		event_pointer;
+struct event_storage * 		event_pointer2;
 
 struct event_storage									// 子链表
 {
@@ -66,6 +68,7 @@ void advertising_start(void);
 void scanning_start(void);
 void check_device_number(uint8_t input);
 void check_event_number(uint8_t input1);
+void event_search(uint8_t input1);
 
 
 
@@ -107,7 +110,7 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 
 					scanning_start();
 
-					NRF_LOG_INFO("scanning\r\n");
+					//NRF_LOG_INFO("scanning\r\n");
 					want_scan = false;
 
 				}else
@@ -117,7 +120,7 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 
 					advertising_start();
 
-					NRF_LOG_INFO("broadcasting\r\n");
+					//NRF_LOG_INFO("broadcasting\r\n");
 					want_scan = true;
 				}
 			}
@@ -178,6 +181,42 @@ void check_event_number(uint8_t input1)
 }
 
 
+void event_search(uint8_t input1)
+{
+	struct device_storage* temporary_pointer = storage;
+	struct device_storage* temporary_pointer_before;
+	struct event_storage* temporary_event_pointer = storage->event;
+	struct event_storage* temporary_event_pointer_before;
+	//memset(&temporary_event_pointer_before, 0, sizeof(temporary_event_pointer_before));
+
+	temporary_pointer_before = temporary_pointer;
+	temporary_event_pointer_before = temporary_event_pointer;
+
+	while((temporary_pointer != NULL) && (temporary_event_pointer->data[10] != input1))  // in_data[3] is in_this_device_tx_success
+	{
+		temporary_event_pointer = temporary_pointer->event;
+
+		while((temporary_event_pointer != NULL) && (temporary_event_pointer->data[10] != input1))
+		{
+			temporary_event_pointer_before = temporary_event_pointer; //temporary_event_pointer_before 不会是结尾，因为temporary_event_pointer不会停在另一个device的开头的话
+			temporary_event_pointer = temporary_event_pointer->next_event_storage;
+		}
+
+		if(temporary_event_pointer == NULL)
+		{
+			temporary_pointer_before = temporary_pointer;
+			temporary_pointer = temporary_pointer->next_device_storage;
+		}
+
+	}
+
+	device_pointer = temporary_pointer_before;
+	event_pointer = temporary_event_pointer_before;
+
+	return;
+}
+
+
 
 
 void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开，二进制那方法也是
@@ -223,23 +262,52 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 				in_event_number					= in_data[10];	//  for both peer and self. as input, just copy to this_event_tx_success. as out put当变换广播内容时就＋1，需要有个广播列表，准别好了新的packet就copy过去。
 				in_target_level					= in_data[11];  // 1: to center. 2: to outside. 3: to all. 0: to same level.
 
-				NRF_LOG_INFO("in_data = %x\r\n", in_data[3]);
+				//NRF_LOG_INFO("in_data = %x\r\n", in_data[3]);
 
 
 
 
-	/*
+/************************************************ free memory *******************************************************************************************/
+
 				if(in_this_device_tx_success == SELF_DEVICE_NUMBER)	// 你存储的数据里的event number都是你自己生成的，所以不会重复。
 				{
-					// this is a comfirm message, free(), then return.
-					if(device_pointer != NULL) // 这地方有问题
+					event_search(in_this_event_tx_success);
+
+					if(event_pointer->next_event_storage != NULL) // 如果这个event确实存在
 					{
-						free(device_pointer); // 这地方还没测试
+						if(event_pointer->next_event_storage->next_event_storage == NULL) //  如果这个event为它所在的list的最后一个
+						{
+							free(event_pointer->next_event_storage);
+							event_pointer->next_event_storage = NULL;	// 补上NULL
+						}else
+						{
+							event_pointer2 = event_pointer->next_event_storage->next_event_storage;
+							free(event_pointer->next_event_storage);
+							event_pointer->next_event_storage = event_pointer2; // 接上
+						}
+
+
+						if(device_pointer->next_device_storage->event->next_event_storage == NULL)	// 如果这个device的list空了
+						{
+							if(device_pointer->next_device_storage->next_device_storage == NULL)	// 如果这个device list 后面没有device了
+							{
+								free(device_pointer->next_device_storage);
+								device_pointer->next_device_storage = NULL; // 补上NULL
+							}else
+							{
+								device_pointer2 = device_pointer->next_device_storage->next_device_storage;
+								free(device_pointer->next_device_storage);
+								device_pointer->next_device_storage = device_pointer2; // 接上
+							}
+						}
+						NRF_LOG_INFO("event %d freed\r\n", in_this_event_tx_success);
+					}else
+					{
+						NRF_LOG_INFO("no this event\r\n");
 					}
 
-					NRF_LOG_INFO("free\r\n");
 					return;
-				}*/
+				}
 
 /*
 				switch(in_target_level)
@@ -323,7 +391,7 @@ if(self_event_number == 200)
 					device_pointer->next_device_storage 		= new_device_storage; 				// 接起来
 					//device_pointer->next_device_storage->event 	= new_event_storage;			 	 // 接起来
 
-					NRF_LOG_INFO("new device: %d and new event: %d\r\n", in_device_number, in_event_number);
+					NRF_LOG_INFO("new device: %d and new event: %d event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
 
 				}else
 				{
@@ -353,7 +421,7 @@ if(self_event_number == 200)
 
 						event_pointer->next_event_storage = new_event_storage; // 接起来
 
-						NRF_LOG_INFO("old device: %d and new event: %d\r\n", in_device_number, in_event_number);
+						NRF_LOG_INFO("old device: %d and new event: %d event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
 
 					}else
 					{
