@@ -12,6 +12,7 @@
 const uint8_t 											SELF_DEVICE_NUMBER  = 0x05;
 extern volatile bool 									first_time;
 volatile bool 											want_scan 		 	= false;
+volatile bool 											normal_mode 		= true;
 static uint8_t											self_device_level 	= 0;
 //static bool											scan_only_mode 		= true;
 static uint8_t 											count				= 2;
@@ -62,6 +63,7 @@ void advertising_start(void);
 void scanning_start(void);
 void check_storage(uint8_t input_device_number, uint8_t input_event_number);
 void check_storage_self_event(uint8_t input_self_event_number);
+void free_memory(void);
 
 
 
@@ -75,19 +77,15 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
             NRF_EGU3->EVENTS_TRIGGERED[1] = 0;
             (void) NRF_EGU3->EVENTS_TRIGGERED[1];
 
-            if(count%2)
+            if(count%2)			// 就是说scan的时间是不变的，idle 或 broadcast 的时间会有所减小
             {
-            	NRF_TIMER2->CC[0] = (0xFFFF) - (rand()%10000) ;
+            	if(normal_mode) { NRF_TIMER2->CC[0] = (0xFFFF) - (rand()%10000); }
+            			   else { NRF_TIMER2->CC[0] = (0x7FFF) - (rand()%10000); }
             }
 
             count++;
 
-            if(count == 200)
-            {
-            	count = 2;
-            }
-
-
+            if(count == 200) { count = 2; }
 
 			if(first_time)
 			{
@@ -98,8 +96,11 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 			{
 				if(want_scan)
 				{
-					err_code = sd_ble_gap_adv_stop();
-					APP_ERROR_CHECK(err_code);
+					if(!normal_mode)
+					{
+						err_code = sd_ble_gap_adv_stop();
+						APP_ERROR_CHECK(err_code);
+					}
 
 					scanning_start();
 
@@ -111,10 +112,21 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 					err_code = sd_ble_gap_scan_stop();
 					APP_ERROR_CHECK(err_code);
 
-					advertising_start();
+					if(storage->next_storage == NULL) { normal_mode = true;  }
+												 else { normal_mode = false; }
 
-					//NRF_LOG_INFO("broadcasting\r\n");
-					want_scan = true;
+					if(normal_mode)
+					{
+						want_scan = true;
+						//NRF_LOG_INFO("normal mode\r\n");
+						return;
+					}else
+					{
+						sd_ble_gap_adv_data_set(storage->next_storage->data, sizeof(storage->next_storage->data), NULL, 0);
+						advertising_start();
+						want_scan = true;
+						//NRF_LOG_INFO("broadcasting\r\n");
+					}
 				}
 			}
 
@@ -168,6 +180,33 @@ void check_storage_self_event(uint8_t input_self_event_number)	// function for c
 }
 
 
+void free_memory(void)
+{
+	check_storage_self_event(in_this_event_tx_success);
+
+	if(event_pointer->next_storage != NULL) // 如果这个event确实存在
+	{
+		if(event_pointer->next_storage->next_storage == NULL) //  如果这个event为它所在的list的最后一个
+		{
+			free(event_pointer->next_storage);
+			event_pointer->next_storage = NULL;	// 补上NULL
+			NRF_LOG_INFO("last event %d freed\r\n", in_this_event_tx_success);
+		}else
+		{
+			event_pointer2 = event_pointer->next_storage->next_storage;
+			free(event_pointer->next_storage);
+			event_pointer->next_storage = event_pointer2; // 接上
+			NRF_LOG_INFO("middle event %d freed\r\n", in_this_event_tx_success);
+		}
+	}else
+	{
+		NRF_LOG_INFO("no this event\r\n");
+	}
+
+	return;
+}
+
+
 void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开，二进制那方法也是
 {
 	uint32_t index = 0;
@@ -191,7 +230,8 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 				in_data[0] 	= field_length; // 这两句话有没有都行把
 				in_data[1] 	= field_type;
 
-				while(a <= (index+field_length)) // 这地方应该只能一个一个copy，不能用memcopy，因为p_data is not the same length as in_data
+				//while(a <= (index+field_length))
+				while(a <= (index + 11)) // 这地方应该只能一个一个copy，不能用memcopy，因为p_data is not the same length as in_data
 				{
 					in_data[b] = p_data[a];
 					//NRF_LOG_INFO("in_data = %x\r\n", in_data[a]);
@@ -220,27 +260,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 
 				if(in_this_device_tx_success == SELF_DEVICE_NUMBER)	// 你存储的数据里的event number都是你自己生成的，所以不会重复。
 				{
-					check_storage_self_event(in_this_event_tx_success);
-
-					if(event_pointer->next_storage != NULL) // 如果这个event确实存在
-					{
-						if(event_pointer->next_storage->next_storage == NULL) //  如果这个event为它所在的list的最后一个
-						{
-							free(event_pointer->next_storage);
-							event_pointer->next_storage = NULL;	// 补上NULL
-							NRF_LOG_INFO("last event %d freed\r\n", in_this_event_tx_success);
-						}else
-						{
-							event_pointer2 = event_pointer->next_storage->next_storage;
-							free(event_pointer->next_storage);
-							event_pointer->next_storage = event_pointer2; // 接上
-							NRF_LOG_INFO("middle event %d freed\r\n", in_this_event_tx_success);
-						}
-					}else
-					{
-						NRF_LOG_INFO("no this event\r\n");
-					}
-
+					free_memory();
 					return;
 				}
 
@@ -285,11 +305,11 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 
 // 如果你收到一个新event，那么device number和event number都被放到in_this_device_tx_success 和 in_this_event_tx_success 里了，然后储存起来，所以这个confirm就是packet来过的证据，就可以判断是不是扫描到了重复packet
 
+
 				if(self_event_number == 200)
 				{
 					self_event_number = 1;
 				}
-
 
 				check_storage(in_device_number, in_event_number); // 搜寻目标其实是in_this_device_tx_success，因为你把in_device_number转到那里了
 
@@ -350,25 +370,11 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 						break;
 				}
 
-
-
-
-/************************************************ out_data *********************************************************************/
-
-
-
-				//sd_ble_gap_adv_data_set(in_data, sizeof(in_data), NULL, 0);
-
-
-
 				return;
 			}
 			index += field_length + 1;
 	    }
 }
-
-
-
 
 
 
