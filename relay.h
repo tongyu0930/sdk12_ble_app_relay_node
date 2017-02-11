@@ -22,7 +22,7 @@ typedef struct
 
 
 
-void create_dynamic_storage(void);
+void init_dynamic_storage(void);
 
 void get_adv_data(ble_evt_t * p_ble_evt);
 

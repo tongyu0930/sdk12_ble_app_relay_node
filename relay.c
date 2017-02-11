@@ -33,7 +33,7 @@ static uint8_t	in_target_level							= 0;
 
 
 
-//struct device_storage * device_foot;
+
 struct device_storage * 	storage;
 struct device_storage * 	device_pointer;
 struct device_storage * 	device_pointer2;
@@ -51,6 +51,8 @@ struct device_storage									// 链表
 	struct event_storage * 		event;
 	struct device_storage * 	next_device_storage;
 };
+
+
 
 static enum
 {
@@ -129,7 +131,7 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 }
 
 
-void create_dynamic_storage(void)
+void init_dynamic_storage(void)
 {
 	storage 									= (struct device_storage *)calloc(1, sizeof(struct device_storage));
 	struct event_storage * new_event_storage	= (struct event_storage *)calloc(1, sizeof(struct event_storage));
@@ -217,8 +219,6 @@ void event_search(uint8_t input1)
 }
 
 
-
-
 void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开，二进制那方法也是
 {
 	uint32_t index = 0;
@@ -279,11 +279,13 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 						{
 							free(event_pointer->next_event_storage);
 							event_pointer->next_event_storage = NULL;	// 补上NULL
+							NRF_LOG_INFO("last event %d freed\r\n", in_this_event_tx_success);
 						}else
 						{
 							event_pointer2 = event_pointer->next_event_storage->next_event_storage;
 							free(event_pointer->next_event_storage);
 							event_pointer->next_event_storage = event_pointer2; // 接上
+							NRF_LOG_INFO("middle event %d freed\r\n", in_this_event_tx_success);
 						}
 
 
@@ -291,16 +293,17 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 						{
 							if(device_pointer->next_device_storage->next_device_storage == NULL)	// 如果这个device list 后面没有device了
 							{
+								NRF_LOG_INFO("last device %d freed\r\n", device_pointer->next_device_storage->event->data[3]);
 								free(device_pointer->next_device_storage);
 								device_pointer->next_device_storage = NULL; // 补上NULL
 							}else
 							{
+								NRF_LOG_INFO("middle device %d freed\r\n", device_pointer->next_device_storage->event->data[3]);
 								device_pointer2 = device_pointer->next_device_storage->next_device_storage;
 								free(device_pointer->next_device_storage);
 								device_pointer->next_device_storage = device_pointer2; // 接上
 							}
 						}
-						NRF_LOG_INFO("event %d freed\r\n", in_this_event_tx_success);
 					}else
 					{
 						NRF_LOG_INFO("no this event\r\n");
@@ -346,7 +349,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 					mode = ANY_FORWARD;
 					break;
 				}*/
-/************************************************ 检测是否为重复packet *******************************************************************************************/
+/************************************************ 储存机制 *******************************************************************************************/
 
 // 如果你收到一个新event，那么device number和event number都被放到in_this_device_tx_success 和 in_this_event_tx_success 里了，然后储存起来，所以这个confirm就是packet来过的证据，就可以判断是不是扫描到了重复packet
 

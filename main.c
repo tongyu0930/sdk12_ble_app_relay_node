@@ -90,7 +90,7 @@ const ble_gap_scan_params_t m_scan_params =
 
 void advertising_start(void);
 void scanning_start(void);
-void create_dynamic_storage(void);
+void init_dynamic_storage(void);
 
 
 
@@ -196,8 +196,8 @@ static void advertising_init(void)
     uint8_t 					out_data[12]			={0x0b,								//0
     													  0xff,								//1
     													  0x00,								//2
-    													  0x01,								//3	//tx_device_success
-														  0x06,								//4	//tx_event_success
+    													  0x02,								//3	//tx_device_success
+														  0x01,								//4	//tx_event_success
 														  0x04,								//5
 														  0x08,								//6
 														  0x05,								//7
@@ -471,7 +471,7 @@ int main(void)
 	NRF_PPI->CH[0].TEP = (uint32_t) &NRF_GPIOTE->TASKS_OUT[0];
 	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
 
-	create_dynamic_storage();
+	init_dynamic_storage();
 
 
     for (;; ) 																	// Enter main loop.
