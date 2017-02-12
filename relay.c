@@ -15,7 +15,7 @@ volatile bool 								want_scan 		 						= false;
 volatile bool 								normal_mode 							= true;
 volatile bool 								explore_break							= false;
 volatile uint8_t 							explore_break_count						= false;
-static uint8_t								self_device_level 						= 200;
+static uint8_t								self_device_group 						= 200;
 static uint8_t								time_count 	        					= 0;
 static uint8_t 								count									= 2;
 static uint8_t								self_event_number						= 1;
@@ -29,7 +29,7 @@ static uint8_t								in_alarm_device_number					= 0;
 static uint8_t								in_alarm_rssi							= 0;
 static uint8_t								in_first_listener_device_number			= 0;
 static uint8_t								in_device_number						= 0;
-static uint8_t								in_device_level							= 0;
+static uint8_t								in_device_group							= 0;
 static uint8_t								in_event_number							= 0;
 static uint8_t								in_explore_mode							= 0;
 
@@ -155,9 +155,9 @@ void SWI3_EGU3_IRQHandler(void)
 								memcpy(new_storage->data, init, sizeof(init));
 
 								new_storage->data[5] = SELF_DEVICE_NUMBER;
-								new_storage->data[6] = self_device_level;
+								new_storage->data[6] = self_device_group;
 								new_storage->data[8] = SELF_DEVICE_NUMBER;
-								new_storage->data[9] = self_device_level;
+								new_storage->data[9] = self_device_group;
 								new_storage->data[10] = self_event_number++;
 
 								event_pointer->next_storage = new_storage;
@@ -294,7 +294,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				in_alarm_rssi					= in_data[6];	// 如果自己亲身听见了alarm，这个in值为0，out自己听到的alarm的rssi，要不然就转发packet里的值
 				in_first_listener_device_number	= in_data[7];
 				in_device_number				= in_data[8];	// for both peer and self.
-				in_device_level					= in_data[9];	// for both peer and self.
+				in_device_group					= in_data[9];	// for both peer and self. 	// center is group 1
 				in_event_number					= in_data[10];	// for both peer and self. as input, just copy to this_event_tx_success. as out put当变换广播内容时就＋1，需要有个广播列表，准别好了新的packet就copy过去。
 				in_explore_mode					= in_data[11];  // 0: off. 1: on.
 
@@ -309,9 +309,9 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				switch(mode)
 				{
 				case EXPLORE_MODE:
-					if((in_device_level < self_device_level) && ((p_adv_report->rssi + 100) > 60)) 		// center is level 1
+					if((in_device_group < self_device_group) && ((p_adv_report->rssi + 150) > 80)) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 					{
-						self_device_level = in_device_level + 1;
+						self_device_group = in_device_group + 1;
 					}
 
 					if(time_count == 0)
@@ -342,14 +342,14 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						return;
 					}
 
-					/************************************************ 过滤机制 ********************************************************************************/
+					/************************************************ filter *********************************************************************************/
 
-					if(in_device_level <= self_device_level)
+					if(in_device_group <= self_device_group)
 					{
 						return;
 					}
 
-					/************************************************ 储存机制 ********************************************************************************/
+					/************************************************ save to storage *************************************************************************/
 
 					// 如果你收到一个新event，那么device number和event number都被放到in_this_device_tx_success 和 in_this_event_tx_success 里了，然后储存起来，所以这个confirm就是packet来过的证据，就可以判断是不是扫描到了重复packet
 
@@ -371,7 +371,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						new_storage->data[4] = in_event_number;
 
 						new_storage->data[8] = SELF_DEVICE_NUMBER;
-						new_storage->data[9] = self_device_level;
+						new_storage->data[9] = self_device_group;
 						new_storage->data[10] = self_event_number++;
 						new_storage->data[11] = 0;
 
