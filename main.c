@@ -312,7 +312,9 @@ void GPIOTE_IRQHandler(void)
     {
     	nrf_delay_us(200000);
         NRF_GPIOTE->EVENTS_IN[2] = 0;
-NRF_LOG_INFO("count = %d\r\n", count);
+
+        NRF_LOG_INFO("amount of the received packet = %d\r\n", count);
+
         if(!started_bro_sca)
 		{
 			NRF_LOG_INFO("start broadcast and scan\r\n");
@@ -472,6 +474,9 @@ int main(void)
 	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
 
 	init_dynamic_storage();
+
+	//first_time 				= true;
+	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
 
 
     for (;; ) 																	// Enter main loop.

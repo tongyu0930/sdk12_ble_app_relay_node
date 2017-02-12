@@ -9,44 +9,48 @@
 #include "relay.h"
 
 
-const uint8_t 											SELF_DEVICE_NUMBER  = 0x05;
-extern volatile bool 									first_time;
-volatile bool 											want_scan 		 	= false;
-volatile bool 											normal_mode 		= true;
-volatile bool 											explore		 		= false;
-volatile uint8_t 										explore_break_count		= false;
-volatile bool 											explore_break		 		= false;
-static uint8_t											self_device_level 	= 200;
-static uint8_t											time_count 	        = 0;
-//static bool											scan_only_mode 		= true;
-static uint8_t 											count				= 2;
-static uint8_t											self_event_number	= 1;
-static const uint8_t 									init[12] 			= {0x0b,0xff,0,0,0,0,0,0,0,0,0,0};
+const uint8_t 								SELF_DEVICE_NUMBER  					= 0x05;
+extern volatile bool 						first_time;
+volatile bool 								want_scan 		 						= false;
+volatile bool 								normal_mode 							= true;
+volatile bool 								explore_break							= false;
+volatile uint8_t 							explore_break_count						= false;
+static uint8_t								self_device_level 						= 200;
+static uint8_t								time_count 	        					= 0;
+static uint8_t 								count									= 2;
+static uint8_t								self_event_number						= 1;
+static const uint8_t 						init[12] 								= {0x0b,0xff,0,0,0,0,0,0,0,0,0,0};
 
 
-static uint8_t	in_ALARM_NUMBER							= 0;
-static uint8_t	in_this_device_tx_success				= 0;
-static uint8_t	in_this_event_tx_success				= 0;
-static uint8_t	in_alarm_device_number					= 0;
-static uint8_t	in_alarm_rssi							= 0;
-static uint8_t	in_first_listener_device_number			= 0;
-static uint8_t	in_device_number						= 0;
-static uint8_t	in_device_level							= 0;
-static uint8_t	in_event_number							= 0;
-static uint8_t	in_explore_mode							= 0;
-
+static uint8_t								in_ALARM_NUMBER							= 0;
+static uint8_t								in_this_device_tx_success				= 0;
+static uint8_t								in_this_event_tx_success				= 0;
+static uint8_t								in_alarm_device_number					= 0;
+static uint8_t								in_alarm_rssi							= 0;
+static uint8_t								in_first_listener_device_number			= 0;
+static uint8_t								in_device_number						= 0;
+static uint8_t								in_device_level							= 0;
+static uint8_t								in_event_number							= 0;
+static uint8_t								in_explore_mode							= 0;
 
 
 
+static volatile enum
+{
+    EXPLORE_MODE,
+    NORMAL_MODE
+} mode = NORMAL_MODE;
 
-struct storage * 		storage;
-struct storage * 		event_pointer;
-struct storage * 		event_pointer2;
+
+
 struct storage
 {
 			uint8_t 			data[12];
 	struct 	storage * 			next_storage;
 };
+struct storage * 		storage;
+struct storage * 		event_pointer;
+struct storage * 		event_pointer2;
 
 
 
@@ -59,7 +63,7 @@ void free_memory(uint8_t input_event);
 
 
 
-void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs that is used for clear timer2's offset
+void SWI3_EGU3_IRQHandler(void)
 {
 	uint32_t err_code;
 
@@ -69,7 +73,7 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
             (void) NRF_EGU3->EVENTS_TRIGGERED[1];
 
 
-            if(!explore && explore_break)
+            if(mode == NORMAL_MODE && explore_break)
             {
             	explore_break_count++;
 
@@ -128,14 +132,14 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 						return;
 					}else
 					{
-						if(explore) // for exlpore
+						if(mode == EXPLORE_MODE) // for exlpore
 						{
 							time_count++;
 
-							if(time_count >= 12)
+							if(time_count >= 15)
 							{
-								explore = false;
-								NRF_LOG_INFO("explore mode off\r\n");
+								mode = NORMAL_MODE;
+								NRF_LOG_INFO("explore mode off, back to normal mode\r\n");
 
 								free_memory(0);
 
@@ -156,8 +160,9 @@ void SWI3_EGU3_IRQHandler(void)											// it is used to shut down thoses PPIs
 								new_storage->data[9] = self_device_level;
 								new_storage->data[10] = self_event_number++;
 
-
 								event_pointer->next_storage = new_storage;
+
+								NRF_LOG_INFO("self report packet created\r\n");
 							}
 						}
 
@@ -178,6 +183,9 @@ void init_dynamic_storage(void)
 	storage 					= (struct storage *)calloc(1, sizeof(struct storage));
 	memcpy(storage->data, init, sizeof(init));
 	storage->next_storage 		= NULL;
+	NRF_LOG_INFO("storage created\r\n");
+	NRF_LOG_INFO("explore mode ready\r\n");
+	NRF_LOG_INFO("normal mode on\r\n");
 }
 
 
@@ -191,7 +199,7 @@ void check_storage(uint8_t input_device_number, uint8_t input_event_number)	// f
 	while((temporary_pointer != NULL) && ((temporary_pointer->data[3] != input_device_number) || (temporary_pointer->data[4] != input_event_number)))
 	{
 		temporary_pointer_before = temporary_pointer;
-		temporary_pointer = temporary_pointer->next_storage;						// 子列表里第一行里有device number，那就行了
+		temporary_pointer = temporary_pointer->next_storage;
 	}
 
 	event_pointer = temporary_pointer_before;
@@ -210,7 +218,7 @@ void check_storage_self_event(uint8_t input_self_event_number)	// function for c
 	while((temporary_pointer != NULL) && (temporary_pointer->data[10] != input_self_event_number))
 	{
 		temporary_pointer_before = temporary_pointer;
-		temporary_pointer = temporary_pointer->next_storage;						// 子列表里第一行里有device number，那就行了
+		temporary_pointer = temporary_pointer->next_storage;
 	}
 
 	event_pointer = temporary_pointer_before;
@@ -246,7 +254,7 @@ void free_memory(uint8_t input_event)
 }
 
 
-void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开，二进制那方法也是
+void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不是只有1和0
 {
 	uint32_t index = 0;
 
@@ -277,7 +285,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 					a++;
 					b++;
 				}
-/************************************************ input data *********************************************************************/
+				/************************************************ input data *********************************************************************/
 
 				in_ALARM_NUMBER					= in_data[2]; 	// faller发出的alarm就是自己的编号，这个位置relay node 不要用。
 				in_this_device_tx_success		= in_data[3];	// 作为input，如果自己的层级低，那就check这个值
@@ -292,16 +300,15 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 
 				//NRF_LOG_INFO("in_data = %x\r\n", in_data[3]);
 
-/************************************************** 分层+汇报 机制 *******************************************************************************************/
-
 				if(in_explore_mode && (time_count ==0))	// 只要收到一次 就开启explor mode， 为了防止你自己到时间停止了，然后别人还没停止，还继续传播explore指令，这样你听到指令又进入explore模式，没完没了了。
 				{
-					explore = true;
+					mode = EXPLORE_MODE;
 					explore_break = true;
 				}
 
-				if(explore)
+				switch(mode)
 				{
+				case EXPLORE_MODE:
 					if((in_device_level < self_device_level) && ((p_adv_report->rssi + 100) > 60)) 		// center is level 1
 					{
 						self_device_level = in_device_level + 1;
@@ -323,71 +330,71 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 就全写在这里，最后在拆开
 
 						NRF_LOG_INFO("explore packet created\r\n");
 					}
+					break; // explore mode 不会进入下面！！！
 
-					return;
-				}
 
-				// explore mode 不会进入下面！！！
+				case NORMAL_MODE:
+					/************************************************ free memory ***************************************************************************/
 
-/************************************************ free memory *******************************************************************************************/
-
-				if(in_this_device_tx_success == SELF_DEVICE_NUMBER)	// 你存储的数据里的event number都是你自己生成的，所以不会重复。
-				{
-					free_memory(in_this_event_tx_success);
-					return;
-				}
-
-/************************************************ 过滤机制 *******************************************************************************************/
-
-				if(in_device_level <= self_device_level)
-				{
-					return;
-				}
-
-/************************************************ 储存机制 *******************************************************************************************/
-
-// 如果你收到一个新event，那么device number和event number都被放到in_this_device_tx_success 和 in_this_event_tx_success 里了，然后储存起来，所以这个confirm就是packet来过的证据，就可以判断是不是扫描到了重复packet
-
-				if(self_event_number == 200)
-				{
-					self_event_number = 1;
-				}
-
-				check_storage(in_device_number, in_event_number); // 搜寻目标其实是in_this_device_tx_success，因为你把in_device_number转到那里了
-
-				if(event_pointer->next_storage == NULL)
-				{
-
-					struct storage * new_storage 	= (struct storage *)calloc(1, sizeof(struct storage));
-					new_storage->next_storage = NULL;
-					memcpy(new_storage->data, in_data, sizeof(in_data));
-
-					new_storage->data[3] = in_device_number;
-					new_storage->data[4] = in_event_number;
-
-					new_storage->data[8] = SELF_DEVICE_NUMBER;
-					new_storage->data[9] = self_device_level;
-					new_storage->data[10] = self_event_number++;
-					new_storage->data[11] = 0;
-
-					if(in_ALARM_NUMBER != 0) // if in_ALARM_NUMBER== 0, then do nothing, because you already copied 0 to output data.
+					if(in_this_device_tx_success == SELF_DEVICE_NUMBER)	// 你存储的数据里的event number都是你自己生成的，所以不会重复。
 					{
-						new_storage->data[2] = 0;
-						new_storage->data[3] = in_ALARM_NUMBER; // alarm node 不用check in_data4，所以说data4的值是多少无所谓。
-						new_storage->data[5] = in_ALARM_NUMBER;
-						new_storage->data[6] = p_adv_report->rssi + 100;
-						new_storage->data[7] = SELF_DEVICE_NUMBER;
+						free_memory(in_this_event_tx_success);
+						return;
 					}
 
-					event_pointer->next_storage = new_storage; 				// 接起来
+					/************************************************ 过滤机制 ********************************************************************************/
 
-					NRF_LOG_INFO("NEW!!! device: %d and event: %d self_event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
+					if(in_device_level <= self_device_level)
+					{
+						return;
+					}
 
-				}else
-				{
-					NRF_LOG_INFO("duplicated device: %d and event: %d\r\n", in_device_number, in_event_number);
+					/************************************************ 储存机制 ********************************************************************************/
+
+					// 如果你收到一个新event，那么device number和event number都被放到in_this_device_tx_success 和 in_this_event_tx_success 里了，然后储存起来，所以这个confirm就是packet来过的证据，就可以判断是不是扫描到了重复packet
+
+					if(self_event_number == 200)
+					{
+						self_event_number = 1;
+					}
+
+					check_storage(in_device_number, in_event_number); // 搜寻目标其实是in_this_device_tx_success，因为你把in_device_number转到那里了
+
+					if(event_pointer->next_storage == NULL)
+					{
+
+						struct storage * new_storage 	= (struct storage *)calloc(1, sizeof(struct storage));
+						new_storage->next_storage = NULL;
+						memcpy(new_storage->data, in_data, sizeof(in_data));
+
+						new_storage->data[3] = in_device_number;
+						new_storage->data[4] = in_event_number;
+
+						new_storage->data[8] = SELF_DEVICE_NUMBER;
+						new_storage->data[9] = self_device_level;
+						new_storage->data[10] = self_event_number++;
+						new_storage->data[11] = 0;
+
+						if(in_ALARM_NUMBER != 0) // if in_ALARM_NUMBER== 0, then do nothing, because you already copied 0 to output data.
+						{
+							new_storage->data[2] = 0;
+							new_storage->data[3] = in_ALARM_NUMBER; // alarm node 不用check in_data4，所以说data4的值是多少无所谓。
+							new_storage->data[5] = in_ALARM_NUMBER;
+							new_storage->data[6] = p_adv_report->rssi + 100;
+							new_storage->data[7] = SELF_DEVICE_NUMBER;
+						}
+
+						event_pointer->next_storage = new_storage; 				// 接起来
+
+						NRF_LOG_INFO("NEW!!! device: %d and event: %d self_event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
+
+					}else
+					{
+						NRF_LOG_INFO("duplicated device: %d and event: %d\r\n", in_device_number, in_event_number);
+					}
+
+					break;
 				}
-
 
 				return;
 			}
