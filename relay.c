@@ -9,17 +9,18 @@
 #include "relay.h"
 
 
-const uint8_t 								SELF_DEVICE_NUMBER  					= 0x05;
-extern volatile bool 						first_time;
-volatile bool 								want_scan 		 						= false;
-volatile bool 								normal_mode 							= true;
-volatile bool 								explore_break							= false;
-volatile uint8_t 							explore_break_count						= false;
-static uint8_t								self_device_group 						= 200;
-static uint8_t								time_count 	        					= 0;
-static uint8_t 								count									= 2;
-static uint8_t								self_event_number						= 1;
-static const uint8_t 						init[12] 								= {0x0b,0xff,0,0,0,0,0,0,0,0,0,0};
+const 				uint8_t 				SELF_DEVICE_NUMBER  					= 0x05;
+extern volatile 	bool 					first_time;
+volatile 			bool 					want_scan 		 						= false;
+volatile 			bool 					normal_mode 							= true;
+volatile 			bool 					explore_break							= false;
+volatile 			uint8_t 				explore_break_count						= false;
+static 				uint8_t					self_device_group 						= 200;
+static 				uint8_t					time_count 	        					= 0;
+static 				uint8_t 				count									= 2;
+static 				uint8_t					self_event_number						= 1;
+static 				uint8_t					free_alarm_count						= 0;
+static const 		uint8_t 				init[12] 								= {0x0b,0xff,0,0,0,0,0,0,0,0,0,0};
 
 
 static uint8_t								in_ALARM_NUMBER							= 0;
@@ -43,7 +44,7 @@ static volatile enum
 
 
 
-struct storage
+struct storage									// linked list
 {
 			uint8_t 			data[12];
 	struct 	storage * 			next_storage;
@@ -51,6 +52,16 @@ struct storage
 struct storage * 		storage;
 struct storage * 		event_pointer;
 struct storage * 		event_pointer2;
+
+struct alarm_list
+{
+			uint8_t 			alarm_number;
+	struct 	alarm_list * 		next_alarm_number;
+};
+struct alarm_list *	free_alarm_list;
+struct alarm_list * alarm_pointer;
+
+
 
 
 
@@ -83,6 +94,36 @@ void SWI3_EGU3_IRQHandler(void)
             		explore_break_count = 0;
             		explore_break = false;
             		NRF_LOG_INFO("explore mode ready\r\n");
+            	}
+            }
+
+
+            if(free_alarm_list->next_alarm_number != NULL)
+            {
+            	free_alarm_count++;
+
+            	if(free_alarm_count >= 250) // 此数值需要调节
+            	{
+            		struct alarm_list* temporary_alarm_pointer = free_alarm_list;
+					struct alarm_list* temporary_alarm_pointer_before;
+
+					temporary_alarm_pointer_before = temporary_alarm_pointer;
+
+            		while(free_alarm_list->next_alarm_number != NULL)		// 每次循环free 掉最后一个
+            		{
+            			temporary_alarm_pointer = free_alarm_list;
+
+            			while(temporary_alarm_pointer->next_alarm_number != NULL)
+            			{
+            				temporary_alarm_pointer_before = temporary_alarm_pointer;
+            				temporary_alarm_pointer = temporary_alarm_pointer->next_alarm_number;
+            			}
+
+            			free(temporary_alarm_pointer);
+            			temporary_alarm_pointer_before->next_alarm_number = NULL;
+            		}
+            		NRF_LOG_INFO("alarm_list all freed\r\n");
+            		//free_alarm_count = 0;
             	}
             }
 
@@ -150,8 +191,8 @@ void SWI3_EGU3_IRQHandler(void)
 
 								check_storage(0,0); // 0号device肯定没有，所以会返回最后一个event的指针
 
-								struct storage * new_storage 	= (struct storage *)calloc(1, sizeof(struct storage));
-								new_storage->next_storage = NULL;
+								struct storage * new_storage = (struct storage *)calloc(1, sizeof(struct storage));
+								new_storage->next_storage 	 = NULL;
 								memcpy(new_storage->data, init, sizeof(init));
 
 								new_storage->data[5] = SELF_DEVICE_NUMBER;
@@ -183,7 +224,13 @@ void init_dynamic_storage(void)
 	storage 					= (struct storage *)calloc(1, sizeof(struct storage));
 	memcpy(storage->data, init, sizeof(init));
 	storage->next_storage 		= NULL;
+
+	free_alarm_list				= (struct alarm_list *)calloc(1, sizeof(struct alarm_list));
+	free_alarm_list->next_alarm_number 		= NULL;
+	free_alarm_list->alarm_number			= 0;
+
 	NRF_LOG_INFO("storage created\r\n");
+	NRF_LOG_INFO("free alarm list created\r\n");
 	NRF_LOG_INFO("explore mode ready\r\n");
 	NRF_LOG_INFO("normal mode on\r\n");
 }
@@ -203,6 +250,24 @@ void check_storage(uint8_t input_device_number, uint8_t input_event_number)	// f
 	}
 
 	event_pointer = temporary_pointer_before;
+
+	return;
+}
+
+void check_alarm_list(uint8_t input_alarm_number)	// function for checking if the device in the dynamic storage
+{
+	struct alarm_list* temporary_alarm_pointer = free_alarm_list;
+	struct alarm_list* temporary_alarm_pointer_before;
+
+	temporary_alarm_pointer_before = temporary_alarm_pointer;
+
+	while((temporary_alarm_pointer != NULL) && ((temporary_alarm_pointer->alarm_number != input_alarm_number)))
+	{
+		temporary_alarm_pointer_before = temporary_alarm_pointer;
+		temporary_alarm_pointer = temporary_alarm_pointer->next_alarm_number;
+	}
+
+	alarm_pointer = temporary_alarm_pointer_before;
 
 	return;
 }
@@ -256,6 +321,7 @@ void free_memory(uint8_t input_event)
 
 void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不是只有1和0
 {
+	NRF_LOG_INFO("fdasfadsfdsafdsa");
 	uint32_t index = 0;
 
 	ble_gap_evt_t * p_gap_evt = &p_ble_evt->evt.gap_evt;
@@ -300,7 +366,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 				//NRF_LOG_INFO("in_data = %x\r\n", in_data[3]);
 
-				if(in_explore_mode && (time_count ==0))	// 只要收到一次 就开启explor mode， 为了防止你自己到时间停止了，然后别人还没停止，还继续传播explore指令，这样你听到指令又进入explore模式，没完没了了。
+				if((in_explore_mode == 1) && (time_count ==0))	// 只要收到一次 就开启explor mode， 为了防止你自己到时间停止了，然后别人还没停止，还继续传播explore指令，这样你听到指令又进入explore模式，没完没了了。
 				{
 					mode = EXPLORE_MODE;
 					explore_break = true;
@@ -316,9 +382,9 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 					if(time_count == 0)
 					{
-						struct storage * new_storage 	= (struct storage *)calloc(1, sizeof(struct storage));
-						event_pointer2 = storage->next_storage;
-						new_storage->next_storage = event_pointer2;
+						struct storage * new_storage = (struct storage *)calloc(1, sizeof(struct storage));
+						event_pointer2 				 = storage->next_storage;
+						new_storage->next_storage 	 = event_pointer2;
 						memcpy(new_storage->data, init, sizeof(init));
 
 						new_storage->data[11] = 1;
@@ -328,7 +394,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 						time_count++;
 
-						NRF_LOG_INFO("explore packet created\r\n");
+						NRF_LOG_INFO("explore mode enter, explore packet created\r\n");
 					}
 					break; // explore mode 不会进入下面！！！
 
@@ -344,9 +410,23 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 					/************************************************ filter *********************************************************************************/
 
-					if(in_device_group <= self_device_group)
+					if((in_device_group <= self_device_group) && (in_ALARM_NUMBER == 0))
 					{
 						return;
+					}
+
+					if(in_ALARM_NUMBER != 0)
+					{
+						check_alarm_list(in_ALARM_NUMBER);
+
+						//NRF_LOG_INFO("haha\r\n");
+
+						if(alarm_pointer->next_alarm_number != NULL)
+						{
+							return;
+						}
+
+						NRF_LOG_INFO("New alarm\r\n");
 					}
 
 					/************************************************ save to storage *************************************************************************/
@@ -362,9 +442,8 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 					if(event_pointer->next_storage == NULL)
 					{
-
-						struct storage * new_storage 	= (struct storage *)calloc(1, sizeof(struct storage));
-						new_storage->next_storage = NULL;
+						struct storage * new_storage = (struct storage *)calloc(1, sizeof(struct storage));
+						new_storage->next_storage 	 = NULL;
 						memcpy(new_storage->data, in_data, sizeof(in_data));
 
 						new_storage->data[3] = in_device_number;
@@ -375,13 +454,20 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						new_storage->data[10] = self_event_number++;
 						new_storage->data[11] = 0;
 
-						if(in_ALARM_NUMBER != 0) // if in_ALARM_NUMBER== 0, then do nothing, because you already copied 0 to output data.
+						if(in_ALARM_NUMBER != 0)
 						{
 							new_storage->data[2] = 0;
 							new_storage->data[3] = in_ALARM_NUMBER; // alarm node 不用check in_data4，所以说data4的值是多少无所谓。
 							new_storage->data[5] = in_ALARM_NUMBER;
 							new_storage->data[6] = p_adv_report->rssi + 100;
 							new_storage->data[7] = SELF_DEVICE_NUMBER;
+
+							struct alarm_list * new_alarm_number = (struct alarm_list *)calloc(1, sizeof(struct alarm_list));
+							new_alarm_number->next_alarm_number = NULL;
+							new_alarm_number->alarm_number		= in_ALARM_NUMBER;
+							alarm_pointer->next_alarm_number	= new_alarm_number;
+
+							free_alarm_count = 0;
 						}
 
 						event_pointer->next_storage = new_storage; 				// 接起来

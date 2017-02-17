@@ -47,8 +47,8 @@
 #define APP_COMPANY_IDENTIFIER          0x0059  	/**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
 
 													//不知道设置为0004和4000有什么区别，led看起来都闪的一样快。
-#define SCAN_INTERVAL           0x0100   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
-#define SCAN_WINDOW             0x0100   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
+#define SCAN_INTERVAL           0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
+#define SCAN_WINDOW             0x0010   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
 #define SCAN_ACTIVE             0        			/**< If 1, performe active scanning (scan requests). */
 #define SCAN_SELECTIVE          0        			/**< If 1, ignore unknown devices (non whitelisted). */
 #define SCAN_TIMEOUT            0x0000
@@ -320,7 +320,7 @@ void GPIOTE_IRQHandler(void)
 
         if(!started_bro_sca)
 		{
-			NRF_LOG_INFO("start broadcast and scan\r\n");
+			NRF_LOG_INFO("start scan\r\n");
 			first_time 				= true;
 			NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
 			started_bro_sca 		= true;
