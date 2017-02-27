@@ -452,7 +452,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						new_storage->data[8] = SELF_DEVICE_NUMBER;
 						new_storage->data[9] = self_device_group;
 						new_storage->data[10] = self_event_number++;
-						new_storage->data[11] = 0;
+						new_storage->data[11] = 0; //
 
 						if(in_ALARM_NUMBER != 0)
 						{
