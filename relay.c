@@ -63,8 +63,8 @@ void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint
 void delete_packet(struct storage* input_packet);
 void delete_block_list(void);
 
-
-
+// TODO: 定时发送report：15mins
+// TODO: center也要能检测alarm
 
 
 
@@ -110,6 +110,7 @@ void SWI3_EGU3_IRQHandler(void)
 		{
 			if(scan_only_mode) { NRF_TIMER2->CC[0] = (0xFFFF) - (rand()%10000); }
 					   else { NRF_TIMER2->CC[0] = (0x7FFF) - (rand()%10000); }
+			// TODO: 去掉变频扫描
 		}
 
 		loop++;
@@ -133,7 +134,7 @@ void SWI3_EGU3_IRQHandler(void)
 					APP_ERROR_CHECK(err_code);
 				}
 
-				scanning_start();
+				scanning_start(); // TODO: 加上第二个scan参数
 
 				NRF_LOG_INFO("scanning\r\n");
 				want_scan = false;
@@ -346,10 +347,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 					if(p_adv_report->rssi >= (-90))
 					{
-						if(p_data[a+8] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
-						{
-							self_level = p_data[a+8] + 1;
-						}
+						self_level = 2;
 					}else
 					{
 						return;
@@ -388,18 +386,11 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 						if(packet_pointer->next_storage == NULL)
 						{
-							check_list(block_list, 7, p_data[a+4], 8, p_data[a+5], 9, p_data[a+6]);
-							if(packet_pointer->next_storage == NULL)
-							{
-								NRF_LOG_INFO("did not find\r\n");
-								return;
-							}else
-							{
-								delete_packet(packet_pointer);
-							}
+							return;
 						}else
 						{
 							delete_packet(packet_pointer);
+							// TODO: add to block list
 						}
 					}
 					return;
@@ -456,7 +447,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 						NRF_LOG_INFO("init mode enter, init packet created\r\n");
 					}
-					break; // init mode 不会进入下面！！！
+					break; // init mode 不会进入下面！！！不会听到alarm！！但是init break时就正常了。
 
 
 				case NORMAL_MODE:

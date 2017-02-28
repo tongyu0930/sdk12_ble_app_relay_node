@@ -481,7 +481,7 @@ int main(void)
 	//first_time 				= true;
 	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
 
-
+// TODO: 改成RTC
     for (;; ) 																	// Enter main loop.
     {
         if (NRF_LOG_PROCESS() == false)
