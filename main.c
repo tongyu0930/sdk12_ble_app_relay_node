@@ -62,7 +62,7 @@ APP_TIMER_DEF(m_sync_count_timer_id);
 static bool 							started_bro_sca				= false;
 volatile bool 							first_time					= true;
 extern volatile bool 					want_scan;
-extern const uint8_t 					SELF_DEVICE_NUMBER;
+extern const uint8_t 					SELF_NUMBER;
 static uint32_t							count						= 0;
 
 
@@ -90,7 +90,7 @@ const ble_gap_scan_params_t m_scan_params =
 
 void advertising_start(void);
 void scanning_start(void);
-void init_dynamic_storage(void);
+void init_storage(void);
 
 
 
@@ -201,7 +201,7 @@ static void advertising_init(void)
 														  0x00,								//5
 														  0x00,								//6
 														  0x00,								//7
-														  SELF_DEVICE_NUMBER,				//8
+														  SELF_NUMBER,				//8
 														  0x00,								//9
 														  0x01,								//10 //event_number
 														  0x00};							//11
@@ -311,7 +311,7 @@ void GPIOTE_IRQHandler(void)
 {
     uint32_t err_code;
 
-    if (NRF_GPIOTE->EVENTS_IN[2] != 0) // button2 开启关闭 广播
+    if (NRF_GPIOTE->EVENTS_IN[2] != 0) // button2 开启 广播, 还不能完美关闭
     {
     	nrf_delay_us(200000);
         NRF_GPIOTE->EVENTS_IN[2] = 0;
@@ -456,7 +456,7 @@ int main(void)
 	NRF_TIMER2->PRESCALER   = 8; // 原值为：SYNC_TIMER_PRESCALER // frequency = 16000000/(2^8) = 62500 hz
 	NRF_TIMER2->BITMODE     = TIMER_BITMODE_BITMODE_16Bit << TIMER_BITMODE_BITMODE_Pos;		//16 bit timer
 	NRF_TIMER2->CC[0]       = (0xFFFF);
-	NRF_TIMER2->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk;// | TIMER_SHORTS_COMPARE3_CLEAR_Msk; // 让event_compare register达到cc的值就清零
+	NRF_TIMER2->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk; // 让event_compare register达到cc的值就清零
 	NRF_TIMER2->TASKS_START = 1;
 	NRF_LOG_INFO("timer2 started\r\n");
 
@@ -465,7 +465,7 @@ int main(void)
 	NRF_PPI->CH[5].TEP = (uint32_t) &NRF_EGU3->TASKS_TRIGGER[1];
 	NRF_PPI->CHENSET   = PPI_CHENSET_CH5_Msk; 							// enable
 
-	NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED0_Msk; 				// Enable interrupt for TRIGGERED[0] event
+	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk; 				// Enable interrupt for TRIGGERED[0] event
 	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;				// for test
 	NVIC_ClearPendingIRQ(SWI3_EGU3_IRQn);
 	NVIC_SetPriority(SWI3_EGU3_IRQn, 7);
@@ -476,7 +476,7 @@ int main(void)
 	NRF_PPI->CH[0].TEP = (uint32_t) &NRF_GPIOTE->TASKS_OUT[0];
 	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
 
-	init_dynamic_storage();
+	init_storage();
 
 	//first_time 				= true;
 	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
