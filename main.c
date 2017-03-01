@@ -49,6 +49,8 @@
 													//不知道设置为0004和4000有什么区别，led看起来都闪的一样快。
 #define SCAN_INTERVAL           0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
 #define SCAN_WINDOW             0x0010   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
+#define SCAN_INTERVAL2           0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
+#define SCAN_WINDOW2             0x0040   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
 #define SCAN_ACTIVE             0        			/**< If 1, performe active scanning (scan requests). */
 #define SCAN_SELECTIVE          0        			/**< If 1, ignore unknown devices (non whitelisted). */
 #define SCAN_TIMEOUT            0x0000
@@ -86,10 +88,20 @@ const ble_gap_scan_params_t m_scan_params =
     .timeout     = SCAN_TIMEOUT
   };
 
+const ble_gap_scan_params_t m_scan_params2 =
+  {
+    .active      = SCAN_ACTIVE,
+    .use_whitelist   = SCAN_SELECTIVE,
+    .adv_dir_report = 0,
+    .interval    = SCAN_INTERVAL2,
+    .window      = SCAN_WINDOW2,
+    .timeout     = SCAN_TIMEOUT
+  };
+
 
 
 void advertising_start(void);
-void scanning_start(void);
+void scanning_start(bool normal_mode);
 void init_storage(void);
 
 
@@ -236,11 +248,19 @@ void advertising_start(void)
     APP_ERROR_CHECK(err_code);
 }
 
-void scanning_start(void)
+void scanning_start(bool normal_mode)
 {
-    uint32_t err_code;
-    err_code = sd_ble_gap_scan_start(&m_scan_params);
-    APP_ERROR_CHECK(err_code);
+	uint32_t err_code;
+	if(normal_mode)
+	{
+		err_code = sd_ble_gap_scan_start(&m_scan_params);
+		APP_ERROR_CHECK(err_code);
+	}else
+	{
+		err_code = sd_ble_gap_scan_start(&m_scan_params2);
+		APP_ERROR_CHECK(err_code);
+	}
+
 }
 
 
