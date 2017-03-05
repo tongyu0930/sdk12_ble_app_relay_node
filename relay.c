@@ -282,7 +282,7 @@ void SWI3_EGU3_IRQHandler(void)
 							struct storage * new_packet = (struct storage *)calloc(1, sizeof(struct storage));
 							new_packet->next_storage 	 = NULL;
 							memcpy(new_packet->data, init, sizeof(init));
-							new_packet->data[7] = self_level;
+							new_packet->data[9] = self_level;
 							new_packet->data[8] = SELF_NUMBER;
 							packet_pointer->next_storage = new_packet;
 							NRF_LOG_INFO("self report packet created\r\n");
@@ -331,10 +331,11 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				{
 					return;
 				}
+				// TODO: 把这三种node分类改成switch
 /************************************************ if motion node *********************************************************************/
 				if((field_length == 7) && (p_data[a+4] >=2))	// motion nodes' number start from 1
 				{
-					check_list(block_list, 7, p_data[a+4], 8, SELF_NUMBER, 1, 0xff);
+					check_list(block_list, 7, p_data[a+4], 8, SELF_NUMBER, 1, 0xff);	// data[1] 肯定是 0xff
 					if(packet_pointer->next_storage != NULL)
 					{
 						if(p_data[5] > 10)
@@ -407,7 +408,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					{
 						if(p_data[a+8] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 						{
-							self_level = p_data[a+8] + 1;
+							self_level = p_data[a+8] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
 						}
 					}else
 					{
@@ -449,7 +450,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						switch(node_type)
 						{
 						case LOWER_LEVEL_NODE:
-							check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6], 9, p_data[a+7]);
+							check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6], 9, p_data[a+7]); // 比较rssi的原因是可能你会同时听见个人摔倒。那比较number和rssi就够了啊！万一rssi一样呢？
 							if(packet_pointer->next_storage == NULL)
 							{
 								return;
@@ -512,8 +513,8 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						}
 					}
 				}
-/************************************************ creat new packet *********************************************************************************************/
-				struct storage * new_packet = (struct storage *)calloc(1, sizeof(struct storage));
+/************************************************ creat new packet 其实你真可以发送前再创建packet，但就是到时候还要再区分一次message内容，还是这样直接制作好方便*********************************************************************************************/
+				struct storage * new_packet = (struct storage *)malloc(sizeof(struct storage));
 				new_packet->next_storage 	 = NULL;
 				memcpy(new_packet->data, init, sizeof(init));
 
