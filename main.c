@@ -236,7 +236,7 @@ static void advertising_init(void)
     err_code = sd_ble_gap_adv_data_set(out_data, sizeof(out_data), NULL, 0); // 用这句话来躲避掉flag
     APP_ERROR_CHECK(err_code);
 
-    err_code = sd_ble_gap_tx_power_set(0); //设置信号发射强度
+    err_code = sd_ble_gap_tx_power_set(-0); //设置信号发射强度
     APP_ERROR_CHECK(err_code);// Check for errors
 }
 
