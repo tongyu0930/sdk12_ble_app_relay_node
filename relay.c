@@ -478,6 +478,12 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						if(p_data[a+4] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 						{
 							self_level = p_data[a+4] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
+							NRF_LOG_INFO("self level updated")
+						}
+						if(mode == INIT_MODE)
+						{
+							broadcast_list->next_storage->data[6] = self_level;
+							NRF_LOG_INFO("init level updated")
 						}
 					}else
 					{
@@ -542,7 +548,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							break;
 
 						case HIGHER_LEVEL:
-							if(p_data[a+7] == 1) // 不要管higer发来的ACK，即便对你来说是个新packet，既然higher能发出来ACK说明你同级的人已经relay了，你就不用好心在加到广播列表了
+							if(p_data[a+7] == 1) // 不要管higer发来的ACK，即便对你来说是个新packet，既然higher能发出来ACK说明你同级的人已经再or完成relay了，你就不用好心在加到广播列表了，也不用加入block
 							{
 								return;
 							}else
