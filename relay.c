@@ -25,6 +25,8 @@ static 		 		uint8_t 				datacheck[13];
 static 		 		uint8_t					broadcast_count					= 0;
 static 		 		uint8_t					message_number					= 1;
 volatile 			bool 					level_changed 					= false;
+volatile 			bool 					self_report_count_start			= false;
+static 		 		uint8_t					self_report_count				= 0;
 
 
 
@@ -83,6 +85,7 @@ void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint
 void delete_packet(struct storage* input_packet);
 void delete_block_list(void);
 uint8_t generate_messsage_number(void);
+void create_self_report(void);
 
 // TODO: 定时发送report：15mins
 // TODO: center也要能检测alarm
@@ -179,159 +182,180 @@ uint8_t generate_messsage_number(void)
 	return message_number;
 }
 
+void create_self_report(void)
+{
+	check_list(broadcast_list, 0, 0, 0, 0); // init mode肯定不会是9，所以会返回最后一个event的指针
+	struct storage * new_packet = (struct storage *)malloc(sizeof(struct storage));
+	new_packet->next_storage 	 = NULL;
+	memcpy(new_packet->data, init, sizeof(init));
+	new_packet->data[6] = self_level;
+	new_packet->data[7] = SELF_NUMBER;
+	new_packet->data[8] = generate_messsage_number();
+	new_packet->data[10] = SELF_NUMBER;
+	new_packet->data[11] = self_level;
+	packet_pointer->next_storage = new_packet;
+	NRF_LOG_INFO("self report packet created\r\n");
+}
+
 void SWI3_EGU3_IRQHandler(void)
 {
 	uint32_t err_code;
 
-    if (NRF_EGU3->EVENTS_TRIGGERED[1] != 0)
-	{
-		NRF_EGU3->EVENTS_TRIGGERED[1] = 0;
-		(void) NRF_EGU3->EVENTS_TRIGGERED[1];
+//	if(NRF_RTC2->EVENTS_COMPARE[0] != 0)
+	NRF_RTC2->EVENTS_COMPARE[0] = 0;
+	NRF_RTC2->TASKS_CLEAR = 1;
 
-		/************************************************** short break after init mode ***********************************************************************/
-		if(mode == NORMAL_MODE && init_break_count)
+//    if (NRF_EGU3->EVENTS_TRIGGERED[1] != 0)	// 这个if不用要，当有EVENTS_TRIGGERED[2]时才有用
+	NRF_EGU3->EVENTS_TRIGGERED[1] = 0;
+	(void) NRF_EGU3->EVENTS_TRIGGERED[1]; // TODO: 这个也要去掉
+
+
+	if(self_report_count_start)
+	{
+		self_report_count++;
+		if(self_report_count >= 60)
 		{
-			init_break_count++;
-			if(init_break_count >= 20)
+			create_self_report();
+			self_report_count = 0;
+		}
+	}
+
+	/************************************************** short break after init mode ***********************************************************************/
+	if(mode == NORMAL_MODE && init_break_count)
+	{
+		init_break_count++;
+		if(init_break_count >= 20)
+		{
+			init_time_count = 0;
+			init_break_count = 0;
+			NRF_LOG_INFO("init mode ready\r\n");
+		}
+	}
+	/************************************************** delete_block_list_count ******************************************************************************/
+	if(block_list->next_storage != NULL)
+	{
+		delete_block_list_count++;
+	}
+	if(delete_block_list_count >= 100)
+	{
+		delete_block_list();
+		delete_block_list_count = 0;
+	}
+	/************************************************** loop interval change ******************************************************************************/
+	if(loop%2)			// 就是说scan的时间是不变的，idle 或 broadcast 的时间会有所减小
+	{
+		if(scan_only_mode) { NRF_TIMER2->CC[0] = (0x008000) - (rand()%10000); }
+				   else { NRF_TIMER2->CC[0] = (0x008000) - (rand()%10000); }
+		// TODO: 去掉了变频扫描,最后测电流时再搞，万一不省电再搞回来。
+	}
+	loop++;
+	if(loop == 250) { loop = 2; }
+	/************************************************** loop ****************************************************************************************/
+	if(first_time)
+	{
+		scanning_start(true);
+		first_time 	= false;
+		want_scan 	= false;
+	}else
+	{
+		if(want_scan)
+		{
+			if(!scan_only_mode)
 			{
-				init_time_count = 0;
-				init_break_count = 0;
-				NRF_LOG_INFO("init mode ready\r\n");
-			}
-		}
-		/************************************************** delete_block_list_count ******************************************************************************/
-		if(block_list->next_storage != NULL)
-		{
-			delete_block_list_count++;
-		}
-		if(delete_block_list_count >= 100)
-		{
-			delete_block_list();
-			delete_block_list_count = 0;
-		}
-		/************************************************** loop interval change ******************************************************************************/
-		if(loop%2)			// 就是说scan的时间是不变的，idle 或 broadcast 的时间会有所减小
-		{
-			if(scan_only_mode) { NRF_TIMER2->CC[0] = (0xFFFF) - (rand()%10000); }
-					   else { NRF_TIMER2->CC[0] = (0x7FFF) - (rand()%10000); }
-			// TODO: 去掉变频扫描,最后测电流时再搞，万一不省电再搞回来。
-		}
-		loop++;
-		if(loop == 250) { loop = 2; }
-		/************************************************** loop ****************************************************************************************/
-		if(first_time)
-		{
-			scanning_start(true);
-			first_time 	= false;
-			want_scan 	= false;
-		}else
-		{
-			if(want_scan)
-			{
-				if(!scan_only_mode)
-				{
-					err_code = sd_ble_gap_adv_stop();
-					APP_ERROR_CHECK(err_code);
-					scanning_start(false);
-				}else
-				{
-					//scanning_start(true); //两种scan参数
-					scanning_start(false);
-				}
-				NRF_LOG_INFO("scanning\r\n");
-				want_scan = false;
+				err_code = sd_ble_gap_adv_stop();
+				APP_ERROR_CHECK(err_code);
+				NRF_GPIO->OUT ^= (1 << 17);
+				scanning_start(false);
 			}else
 			{
-				err_code = sd_ble_gap_scan_stop(); // stop scanning
-				APP_ERROR_CHECK(err_code);
+				//scanning_start(true); //两种scan参数
+				scanning_start(false);
+			}
+			//NRF_LOG_INFO("scanning\r\n");
+			want_scan = false;
+		}else
+		{
+			err_code = sd_ble_gap_scan_stop(); // stop scanning
+			APP_ERROR_CHECK(err_code);
 
-				if(ack_list->next_storage != NULL)	// 如果播报ack时遇上initmode，那也没关系，ack播一次就没了，然后就进入init，进入init时不会在听到其他relay and alarm node的声音了
+			if(ack_list->next_storage != NULL)	// 如果播报ack时遇上initmode，那也没关系，ack播一次就没了，然后就进入init，进入init时不会在听到其他relay and alarm node的声音了
+			{
+				sd_ble_gap_adv_data_set(ack_list->next_storage->data, sizeof(ack_list->next_storage->data), NULL, 0);
+				advertising_start();
+				NRF_GPIO->OUT ^= (1 << 17);
+				delete_packet(ack_list);
+				scan_only_mode = false;	// 设为false，在扫描前才会先关闭广播再扫描，要不然就直接扫描了，然后你如果再开启广播就出现错误
+				want_scan = true;
+				NRF_LOG_INFO("broadcasting confirm list\r\n");
+				//NRF_EGU3->INTENCLR 		= EGU_INTENCLR_TRIGGERED1_Msk;
+			}else
+			{
+				if(broadcast_list->next_storage == NULL)
 				{
-					sd_ble_gap_adv_data_set(ack_list->next_storage->data, sizeof(ack_list->next_storage->data), NULL, 0);
-					advertising_start();
-					NRF_GPIO->OUT ^= (1 << 20);
-					delete_packet(ack_list);
-					scan_only_mode = false;	// 设为false，在扫描前才会先关闭广播再扫描，要不然就直接扫描了，然后你如果再开启广播就出现错误
-					want_scan = true;
-					NRF_LOG_INFO("broadcasting confirm list\r\n");
-					//NRF_EGU3->INTENCLR 		= EGU_INTENCLR_TRIGGERED1_Msk;
+					scan_only_mode = true;
 				}else
 				{
-					if(broadcast_list->next_storage == NULL)
+					/************************************************** 广播次数计数 ******************************************************************************/
+					if(memcmp(datacheck, broadcast_list->next_storage->data, sizeof(datacheck)) == 0) // 如果经过扫描后比较起来还一样，说明没扫描到ACK啊
 					{
-						scan_only_mode = true;
-					}else
-					{
-						/************************************************** 广播次数计数 ******************************************************************************/
-						if(memcmp(datacheck, broadcast_list->next_storage->data, sizeof(datacheck)) == 0) // 如果经过扫描后比较起来还一样，说明没扫描到ACK啊
+						copy_data_check = false;
+						broadcast_count++;
+						if((broadcast_count > 100) && (level_changed == false))
 						{
-							copy_data_check = false;
-							broadcast_count++;
-							if((broadcast_count > 100) && (level_changed == false))
-							{
-								broadcast_list->next_storage->data[6] = self_level + 1;
-								datacheck[6] = broadcast_list->next_storage->data[6];
-								level_changed = true;
-								NRF_LOG_INFO("level cahnged\r\n");
-							}
-							if(broadcast_count > 200)
-							{
-								delete_packet(broadcast_list); // 如果降级后也没人要的话，这个packet被抛弃了，要不然这辈子就卡在这个packet上了
-								broadcast_count = 0;
-								level_changed = false;
-								NRF_LOG_INFO("paceket removed because nobody want this\r\n");
-							}
-						}else
+							broadcast_list->next_storage->data[6] = self_level + 1;
+							datacheck[6] = broadcast_list->next_storage->data[6];
+							level_changed = true;
+							NRF_LOG_INFO("level cahnged\r\n");
+						}
+						if(broadcast_count > 200)
 						{
+							delete_packet(broadcast_list); // 如果降级后也没人要的话，这个packet被抛弃了，要不然这辈子就卡在这个packet上了
 							broadcast_count = 0;
 							level_changed = false;
-							NRF_LOG_INFO("top of the broadcast list changed\r\n");
-							copy_data_check = true;
+							NRF_LOG_INFO("paceket removed because nobody want this\r\n");
 						}
-						scan_only_mode = false;
-					}
-					if(scan_only_mode)
-					{
-						want_scan = true;
-						//NRF_LOG_INFO("normal mode\r\n");
-						return;
 					}else
 					{
-						if(mode == INIT_MODE) // for init mode
-						{
-							init_time_count++;
-							broadcast_count = 0; // 为了防治initmode时，initpacket被误以为是发不出去的packet。
-							//level_changed = false; // 你既让不让broadcast count＋＋那这个就不会是true
-							if(init_time_count >= 15)
-							{
-								mode = NORMAL_MODE;
-								NRF_LOG_INFO("init mode off, back to normal mode\r\n");
-								/************************************************** delete init packet ********************************************************/
-								delete_packet(broadcast_list);
-								NRF_LOG_INFO("init packet deleted\r\n");
-								/************************************************** creat report *************************************************************/
-								check_list(broadcast_list, 0, 0, 0, 0); // init mode肯定不会是9，所以会返回最后一个event的指针
-								struct storage * new_packet = (struct storage *)malloc(sizeof(struct storage));
-								new_packet->next_storage 	 = NULL;
-								memcpy(new_packet->data, init, sizeof(init));
-								new_packet->data[6] = self_level;
-								new_packet->data[7] = SELF_NUMBER;
-								new_packet->data[8] = generate_messsage_number();
-								new_packet->data[10] = SELF_NUMBER;
-								new_packet->data[11] = self_level;
-								packet_pointer->next_storage = new_packet;
-								NRF_LOG_INFO("self report packet created\r\n");
-							}
-						}
-						sd_ble_gap_adv_data_set(broadcast_list->next_storage->data, sizeof(broadcast_list->next_storage->data), NULL, 0);
-						if(copy_data_check == true)
-						{
-							memcpy(datacheck, broadcast_list->next_storage->data, sizeof(broadcast_list->next_storage->data)); // scan时广播列表第一个可能就被删掉了，然后scan后再和广播列表第一个比较就回不同
-						}
-						advertising_start();
-						NRF_LOG_INFO("broadcasting broadcast list\r\n");
-						want_scan = true;
+						broadcast_count = 0;
+						level_changed = false;
+						NRF_LOG_INFO("top of the broadcast list changed\r\n");
+						copy_data_check = true;
 					}
+					scan_only_mode = false;
+				}
+				if(scan_only_mode)
+				{
+					want_scan = true;
+					//NRF_LOG_INFO("normal mode\r\n");
+					return;
+				}else
+				{
+					if(mode == INIT_MODE) // for init mode
+					{
+						init_time_count++;
+						broadcast_count = 0; // 为了防治initmode时，initpacket被误以为是发不出去的packet。
+						//level_changed = false; // 你既让不让broadcast count＋＋那这个就不会是true
+						if(init_time_count >= 15)
+						{
+							mode = NORMAL_MODE;
+							NRF_LOG_INFO("init mode off, back to normal mode\r\n");
+							/************************************************** delete init packet ********************************************************/
+							delete_packet(broadcast_list);
+							NRF_LOG_INFO("init packet deleted\r\n");
+							/************************************************** creat report *************************************************************/
+							create_self_report();
+							self_report_count_start = true;
+						}
+					}
+					sd_ble_gap_adv_data_set(broadcast_list->next_storage->data, sizeof(broadcast_list->next_storage->data), NULL, 0);
+					if(copy_data_check == true)
+					{
+						memcpy(datacheck, broadcast_list->next_storage->data, sizeof(broadcast_list->next_storage->data)); // scan时广播列表第一个可能就被删掉了，然后scan后再和广播列表第一个比较就回不同
+					}
+					advertising_start();
+					NRF_GPIO->OUT ^= (1 << 17);
+					NRF_LOG_INFO("broadcasting broadcast list\r\n");
+					want_scan = true;
 				}
 			}
 		}
@@ -353,8 +377,8 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 			if ((field_type == BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA) || (field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME))
 			{
-				NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
-				return;
+//				NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
+//				return;
 				uint8_t a = index+2;
 				/************************************************ check origin *********************************************************************/
 

@@ -55,11 +55,6 @@
 #define SCAN_SELECTIVE          0        			/**< If 1, ignore unknown devices (non whitelisted). */
 #define SCAN_TIMEOUT            0x0000
 
-#define APP_TIMER_PRESCALER             0   		/**< Value of the RTC1 PRESCALER register. */
-#define APP_TIMER_OP_QUEUE_SIZE         4   		/**< Size of timer operation queues. */
-#define SYNC_BEACON_COUNT_PRINTOUT_INTERVAL APP_TIMER_TICKS(1000, APP_TIMER_PRESCALER)
-APP_TIMER_DEF(m_sync_count_timer_id);
-
 
 static bool 							started_bro_sca				= false;
 volatile bool 							first_time					= true;
@@ -184,13 +179,6 @@ void app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)  //重写a
     while(loop);
 
     __enable_irq();
-}
-
-
-//这是APP TIMER's handler
-static void sync_beacon_count_printout_handler(void * p_context)
-{
-
 }
 
 
@@ -371,12 +359,12 @@ void GPIOTE_IRQHandler(void)
         	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
         	NRF_GPIO->OUT ^= (1 << 20);
         	NRF_GPIOTE->TASKS_OUT[0];
-			NRF_LOG_INFO("shift %d \r\n", rand()%100);
+			NRF_LOG_INFO("shift %d \r\n", rand()%10000);
 
     }
 }
 
-
+// TODO: 去掉button，去掉delay
 static void gpio_configure(void)
 {
 	NRF_GPIO->DIRSET = LEDS_MASK; // set register
@@ -433,6 +421,7 @@ static void gpio_configure(void)
 	NVIC_EnableIRQ(GPIOTE_IRQn); 											 					//declaration值得一看！！！有关IRQ
 }
 
+
 /**
  * @brief Function for application main entry.
  */
@@ -444,44 +433,29 @@ int main(void)
     APP_ERROR_CHECK(err_code);
     NRF_LOG_INFO("###################### System Started ####################\r\n");
 
-    APP_TIMER_INIT(APP_TIMER_PRESCALER, APP_TIMER_OP_QUEUE_SIZE, false); //(0,4,false)
-    /*
-     *  PRESCALER: will be written to the RTC1 PRESCALER register. This determines the time resolution of the timer,
-     *  and thus the amount of time it can count before it wrap around. On the nRF52 the RTC is a 24-bit counter with
-     *  a 12 bit prescaler that run on the 32.768 LFCLK. The counter increment frequency (tick rate) fRTC [kHz] = 32.768/(PRESCALER+1).
-     *  For example, a prescaler value of 0 means that the tick rate or time resolution is 32.768 kHz * 1/(0+1) = 32.768 kHz
-     *  and the timer will wrap around every (2^24) * 1/32.768 kHz = 512 s.
-     *
-     *  OP_QUEUES_SIZE: determines the maximum number of events that can be queued. Let's say you are calling the API function several
-     *  times in a row to start a single shot timer, this determines how many times you can have queued before the queue gets full.
-     *
-     *  SCHEDULER_FUNC: should be set to false when scheduler is not used
-     */
-    err_code = app_timer_create(&m_sync_count_timer_id, APP_TIMER_MODE_REPEATED, sync_beacon_count_printout_handler);
-    APP_ERROR_CHECK(err_code);
+
 
     ble_stack_init();
     advertising_init();
-
-    err_code = app_timer_start(m_sync_count_timer_id, SYNC_BEACON_COUNT_PRINTOUT_INTERVAL, NULL); // 每1000ms就触发一次handler
-    APP_ERROR_CHECK(err_code);
 
     gpio_configure(); // 注意gpio和timesync是相对独立的，同步时钟本质上不需要gpio
 
 
 
-    // 设置并开启 timer2 这个就是被同步的timer
-	NRF_TIMER2->TASKS_STOP  = 1;
-	NRF_TIMER2->TASKS_CLEAR = 1;
-	NRF_TIMER2->PRESCALER   = 8; // 原值为：SYNC_TIMER_PRESCALER // frequency = 16000000/(2^8) = 62500 hz
-	NRF_TIMER2->BITMODE     = TIMER_BITMODE_BITMODE_16Bit << TIMER_BITMODE_BITMODE_Pos;		//16 bit timer
-	NRF_TIMER2->CC[0]       = (0xFFFF);
-	NRF_TIMER2->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk; // 让event_compare register达到cc的值就清零
-	NRF_TIMER2->TASKS_START = 1;
-	NRF_LOG_INFO("timer2 started\r\n");
+    // RTC1
+	NRF_RTC2->TASKS_STOP  = 1;
+	NRF_RTC2->TASKS_CLEAR = 1;
+	NRF_RTC2->PRESCALER   = 0; // 24-bit COUNTER // 12 bit prescaler for COUNTER frequency (32768/(PRESCALER+1))
+	NRF_RTC2->CC[0]       = (0x008000);
+	NRF_RTC2->EVENTS_COMPARE[0] = 0;
+	//NRF_RTC2->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk; // 让event_compare register达到cc的值就清零
+	NRF_RTC2->TASKS_START = 1;
+	NRF_LOG_INFO("count1 started\r\n");
+	NRF_RTC2->EVTENSET	  = RTC_INTENSET_COMPARE0_Msk;
+
 
 	NRF_PPI->CHENCLR      = (1 << 5);
-	NRF_PPI->CH[5].EEP = (uint32_t) &NRF_TIMER2->EVENTS_COMPARE[0];
+	NRF_PPI->CH[5].EEP = (uint32_t) &NRF_RTC2->EVENTS_COMPARE[0];
 	NRF_PPI->CH[5].TEP = (uint32_t) &NRF_EGU3->TASKS_TRIGGER[1];
 	NRF_PPI->CHENSET   = PPI_CHENSET_CH5_Msk; 							// enable
 
@@ -491,17 +465,17 @@ int main(void)
 	NVIC_SetPriority(SWI3_EGU3_IRQn, 7);
 	NVIC_EnableIRQ(SWI3_EGU3_IRQn);
 
-	NRF_PPI->CHENCLR      = (1 << 0);									// for test
-	NRF_PPI->CH[0].EEP = (uint32_t) &NRF_TIMER2->EVENTS_COMPARE[0];		// 为什么用ppi时不用清除compare event？：EVENTS_COMPARE[0]＝0
-	NRF_PPI->CH[0].TEP = (uint32_t) &NRF_GPIOTE->TASKS_OUT[0];
-	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
+//	NRF_PPI->CHENCLR      = (1 << 0);									// for test
+//	NRF_PPI->CH[0].EEP = (uint32_t) &NRF_RTC2->EVENTS_COMPARE[0];		// 如果设置了shortcut，就不用清除compare event：EVENTS_COMPARE[0]＝0
+//	NRF_PPI->CH[0].TEP = (uint32_t) &NRF_GPIOTE->TASKS_OUT[0];
+//	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
+
 
 	init_storage();
 
 	//first_time 				= true;
 	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
 
-// TODO: 改成RTC
     for (;; ) 																	// Enter main loop.
     {
         if (NRF_LOG_PROCESS() == false)
