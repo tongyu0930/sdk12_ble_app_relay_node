@@ -49,8 +49,8 @@
 													//不知道设置为0004和4000有什么区别，led看起来都闪的一样快。
 #define SCAN_INTERVAL           0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
 #define SCAN_WINDOW             0x0010   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
-#define SCAN_INTERVAL2           0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
-#define SCAN_WINDOW2             0x0040   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
+#define SCAN_INTERVAL2          0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
+#define SCAN_WINDOW2            0x0040   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
 #define SCAN_ACTIVE             0        			/**< If 1, performe active scanning (scan requests). */
 #define SCAN_SELECTIVE          0        			/**< If 1, ignore unknown devices (non whitelisted). */
 #define SCAN_TIMEOUT            0x0000
@@ -224,7 +224,8 @@ static void advertising_init(void)
     err_code = sd_ble_gap_adv_data_set(out_data, sizeof(out_data), NULL, 0); // 用这句话来躲避掉flag
     APP_ERROR_CHECK(err_code);
 
-    err_code = sd_ble_gap_tx_power_set(-0); //设置信号发射强度
+    err_code = sd_ble_gap_tx_power_set(-40); //设置信号发射强度
+    // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
     APP_ERROR_CHECK(err_code);// Check for errors
 }
 
@@ -324,6 +325,8 @@ void GPIOTE_IRQHandler(void)
     	nrf_delay_us(200000);
         NRF_GPIOTE->EVENTS_IN[2] = 0;
 
+        NRF_GPIO->OUT ^= (1 << 17);
+
         NRF_LOG_INFO("amount of the received packet = %d\r\n", count);
 
         if(!started_bro_sca)
@@ -356,10 +359,12 @@ void GPIOTE_IRQHandler(void)
     	nrf_delay_us(200000);
         NRF_GPIOTE->EVENTS_IN[3] = 0;
 
-        	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
-        	NRF_GPIO->OUT ^= (1 << 20);
-        	NRF_GPIOTE->TASKS_OUT[0];
-			NRF_LOG_INFO("shift %d \r\n", rand()%10000);
+//        	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
+//        	NRF_GPIO->OUT ^= (1 << 20);
+//        	NRF_GPIOTE->TASKS_OUT[0];
+//			NRF_LOG_INFO("shift %d \r\n", rand()%10000);
+
+        manual_init();
 
     }
 }
@@ -470,7 +475,7 @@ int main(void)
 //	NRF_PPI->CH[0].TEP = (uint32_t) &NRF_GPIOTE->TASKS_OUT[0];
 //	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
 
-
+	NRF_GPIO->OUT ^= (1 << 17);
 	init_storage();
 
 	//first_time 				= true;

@@ -9,24 +9,33 @@
 #include "relay.h"
 
 
-const 				uint8_t 				SELF_NUMBER  					= 0x05;
-static 				uint8_t					self_level 						= 5;
+const 				uint8_t 				SELF_NUMBER  					= 3;
+const 				uint8_t 				REPORT_SENDING_INTERVAL			= 20;
+const 				uint8_t 				INIT_TIME_LENGTH				= 10;
+const 				uint8_t 				BREAK_AFTER_INIT				= 10;
+const 				uint8_t 				DELETE_BLOCK_LIST_COUNT			= 60;
+const 				uint8_t 				ADVERTISING_CHANGE				= 60;
+const 				uint8_t 				ADVERTISING_LIMIT				= 120;
+const 				uint8_t 				MINIMUM_SIGNAL_ACCEPT			= 90;
 
+
+
+volatile static 				uint8_t					self_level 						= 200;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
 extern volatile 	bool 					first_time;
 volatile 			bool 					want_scan 		 				= false;
 volatile 			bool 					scan_only_mode 					= true;		// broadcast list 里空时
-volatile 			bool 					copy_data_check					= true;
-volatile 			uint8_t 				init_break_count				= 0;
-static 				uint8_t					init_time_count 	        	= 0;
-static 				uint8_t 				loop							= 2;
-static 				uint8_t 				delete_block_list_count			= 0;
+volatile static		bool 					copy_data_check					= true;
+volatile static		uint8_t 				init_break_count				= 0;
+volatile static 	uint8_t					init_time_count 	        	= 0;
+volatile static 	uint8_t 				loop							= 2;
+volatile static 	uint8_t 				delete_block_list_count			= 0;
 static const 		uint8_t 				init[13] 						= {0x0c,0xff,'T','O','N','G',0,0,0,0,0,0,0};
-static 		 		uint8_t 				datacheck[13];
-static 		 		uint8_t					broadcast_count					= 0;
-static 		 		uint8_t					message_number					= 1;
-volatile 			bool 					level_changed 					= false;
-volatile 			bool 					self_report_count_start			= false;
-static 		 		uint8_t					self_report_count				= 0;
+static 				uint8_t 				datacheck[13];
+volatile static 	uint8_t					broadcast_count					= 0;
+volatile static 	uint8_t					message_number					= 1;
+volatile static		bool 					level_changed 					= false;
+volatile static		bool 					self_report_count_start			= false;
+volatile static 	uint8_t					self_report_count				= 0;
 
 
 
@@ -58,7 +67,8 @@ static volatile enum
 	RELAY_ACK_PACKET,
 	INIT_PACKET,
 	ALARM_ACK_PACKET,
-	ALARM_PACKET
+	ALARM_PACKET,
+	NO
 } create_packet;
 
 
@@ -87,7 +97,6 @@ void delete_block_list(void);
 uint8_t generate_messsage_number(void);
 void create_self_report(void);
 
-// TODO: 定时发送report：15mins
 // TODO: center也要能检测alarm
 
 
@@ -213,7 +222,7 @@ void SWI3_EGU3_IRQHandler(void)
 	if(self_report_count_start)
 	{
 		self_report_count++;
-		if(self_report_count >= 60)
+		if(self_report_count >= REPORT_SENDING_INTERVAL)
 		{
 			create_self_report();
 			self_report_count = 0;
@@ -224,7 +233,7 @@ void SWI3_EGU3_IRQHandler(void)
 	if(mode == NORMAL_MODE && init_break_count)
 	{
 		init_break_count++;
-		if(init_break_count >= 20)
+		if(init_break_count >= BREAK_AFTER_INIT)
 		{
 			init_time_count = 0;
 			init_break_count = 0;
@@ -236,7 +245,7 @@ void SWI3_EGU3_IRQHandler(void)
 	{
 		delete_block_list_count++;
 	}
-	if(delete_block_list_count >= 100)
+	if(delete_block_list_count >= DELETE_BLOCK_LIST_COUNT)
 	{
 		delete_block_list();
 		delete_block_list_count = 0;
@@ -268,8 +277,7 @@ void SWI3_EGU3_IRQHandler(void)
 				scanning_start(false);
 			}else
 			{
-				//scanning_start(true); //两种scan参数
-				scanning_start(false);
+				scanning_start(true); //两种scan参数
 			}
 			//NRF_LOG_INFO("scanning\r\n");
 			want_scan = false;
@@ -300,14 +308,14 @@ void SWI3_EGU3_IRQHandler(void)
 					{
 						copy_data_check = false;
 						broadcast_count++;
-						if((broadcast_count > 100) && (level_changed == false))
+						if((broadcast_count > ADVERTISING_CHANGE) && (level_changed == false))
 						{
 							broadcast_list->next_storage->data[6] = self_level + 1;
 							datacheck[6] = broadcast_list->next_storage->data[6];
 							level_changed = true;
-							NRF_LOG_INFO("level cahnged\r\n");
+							NRF_LOG_INFO("packet level cahnged\r\n");
 						}
-						if(broadcast_count > 200)
+						if(broadcast_count > ADVERTISING_LIMIT)
 						{
 							delete_packet(broadcast_list); // 如果降级后也没人要的话，这个packet被抛弃了，要不然这辈子就卡在这个packet上了
 							broadcast_count = 0;
@@ -335,7 +343,7 @@ void SWI3_EGU3_IRQHandler(void)
 						init_time_count++;
 						broadcast_count = 0; // 为了防治initmode时，initpacket被误以为是发不出去的packet。
 						//level_changed = false; // 你既让不让broadcast count＋＋那这个就不会是true
-						if(init_time_count >= 15)
+						if(init_time_count >= INIT_TIME_LENGTH)
 						{
 							mode = NORMAL_MODE;
 							NRF_LOG_INFO("init mode off, back to normal mode\r\n");
@@ -369,6 +377,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 	ble_gap_evt_t * p_gap_evt = &p_ble_evt->evt.gap_evt;
 	ble_gap_evt_adv_report_t * p_adv_report = &p_gap_evt->params.adv_report; // 这个report里还有peer地址，信号强度等可以利用的信息。
 	uint8_t *p_data = (uint8_t *)p_adv_report->data;
+	create_packet = NO;
 
 	while (index < p_adv_report->dlen)
 	    {
@@ -388,19 +397,19 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 				}
 				/************************************************ check node type *********************************************************************/
-				if(p_data[a+4]== 0)
+				if(field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME)
 				{
-					node_type = ALARM_NODE;
+					node_type = CENTER_NODE;
 				}else
 				{
-					if(p_data[a+7] > 1)
+					if(p_data[a+4]== 0)
 					{
-						return; // 如果是给alarm的2nd ACK 就不管了	，所以说initmode不要 把这位设置为大于1的数
+						node_type = ALARM_NODE;
 					}else
 					{
-						if(p_data[a+4]== 1)
+						if(p_data[a+7] > 1)
 						{
-							node_type = CENTER_NODE;
+							return; // 如果是给alarm的2nd ACK 就不管了	，所以说initmode不要 把这位设置为大于1的数
 						}else
 						{
 							node_type = RELAY_NODE;
@@ -420,6 +429,40 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						}
 					}
 				}
+
+//				if(p_data[a+4]== 0)
+//				{
+//					node_type = ALARM_NODE;
+//				}else
+//				{
+//					if(p_data[a+7] > 1)
+//					{
+//						return; // 如果是给alarm的2nd ACK 就不管了	，所以说initmode不要 把这位设置为大于1的数
+//					}else
+//					{
+//						if(p_data[a+4]== 1)
+//						if(field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME)
+//						{
+//							node_type = CENTER_NODE;
+//						}else
+//						{
+//							node_type = RELAY_NODE;
+//							if(p_data[a+4] < self_level)
+//							{
+//								node_level = LOWER_LEVEL;
+//							}else
+//							{
+//								if(p_data[a+4] == self_level)
+//								{
+//									node_level = SAME_LEVEL;
+//								}else
+//								{
+//									node_level = HIGHER_LEVEL;
+//								}
+//							}
+//						}
+//					}
+//				}
 				/************************************************ switch node type *********************************************************************/
 				switch(node_type)
 				{
@@ -459,18 +502,19 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					break;
 
 				case CENTER_NODE:
-					NRF_LOG_INFO("center node!!!!\r\n");
+					NRF_LOG_INFO("Center node!!! \r\n");
 					/************************************************ update self_level and filt bad signal**********************************************************/
-					if(p_adv_report->rssi >= (-90)) // 可接受的最低信号强度
+					if(p_adv_report->rssi >= (-MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
 					{
-						self_level = 2;
+//						self_level = 2;	// for test
 					}else
 					{
 						return;
 					}
 					/************************************************ mode **********************************************************/
-					if((p_data[a+5]== 0) && (p_data[a+6]== 0))
+					if((p_data[a+4] == 0x30) && (p_data[a+5] == 0x30)) // “TONG00"
 					{
+						self_level = 2; // for test
 						if(init_time_count == 0)
 						{
 							mode = INIT_MODE;
@@ -482,8 +526,10 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							return;
 						}
 					}else
-					{
-						check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
+					{	// TONG01xxxx
+						uint8_t num1 = (p_data[a+4] - 48) * 16 + (p_data[a+5] - 48);
+						uint8_t num2 = (p_data[a+6] - 48) * 16 + (p_data[a+7] - 48);
+						check_list(broadcast_list, 7, num1, 8, num2);
 						if(packet_pointer->next_storage == NULL)
 						{
 							return;
@@ -493,21 +539,50 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							create_packet = BLOCK_PACKET;
 						}
 					}
+
+
+
+//					if((p_data[a+5]== 0) && (p_data[a+6]== 0))
+//					{
+//						if(init_time_count == 0)
+//						{
+//							mode = INIT_MODE;
+//							init_break_count++;
+//							init_time_count++;
+//							create_packet = INIT_PACKET;
+//						}else
+//						{
+//							return;
+//						}
+//					}else
+//					{
+//						check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
+//						if(packet_pointer->next_storage == NULL)
+//						{
+//							return;
+//						}else
+//						{
+//							delete_packet(packet_pointer);
+//							create_packet = BLOCK_PACKET;
+//						}
+//					}
 					break;
 
 				case RELAY_NODE:
+					NRF_LOG_INFO("Relay node!!! \r\n");
 					/************************************************ update self_level and filter bad signal**********************************************************/
-					if(p_adv_report->rssi >= (-90))
+					if(p_adv_report->rssi >= (-MINIMUM_SIGNAL_ACCEPT))
 					{
 						if(p_data[a+4] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 						{
 							self_level = p_data[a+4] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
-							NRF_LOG_INFO("self level updated")
+							NRF_LOG_INFO("self level changed to %d \r\n",self_level)
 						}
 						if(mode == INIT_MODE)
 						{
 							broadcast_list->next_storage->data[6] = self_level;
-							NRF_LOG_INFO("init level updated")
+							NRF_LOG_INFO("init packet level updated \r\n")
+							return;
 						}
 					}else
 					{
@@ -516,7 +591,8 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					/************************************************ check mode *********************************************************************/
 					if((p_data[a+5] == 0) && (p_data[a+6] == 0))	// 只要收到一次 就开启init mode， 为了防止你自己到时间停止了，然后别人还没停止，还继续传播init指令，这样你听到指令又进入init模式，没完没了了。
 					{
-						if(init_time_count ==0)
+						NRF_LOG_INFO("double 0 \r\n")
+						if(init_time_count == 0)
 						{
 							mode = INIT_MODE;
 							init_break_count++;
@@ -675,10 +751,35 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					packet_pointer->next_storage = new_packet; 				// 接起来
 					NRF_LOG_INFO("new alarm ack packet created\r\n");
 					break;
+
+				case NO:
+					break;
 				}
 			return;
 		}
 		index += field_length + 1;
+	}
+}
+
+void manual_init(void)
+{
+	if(init_time_count == 0)
+	{
+		mode = INIT_MODE;
+		init_break_count++;
+		init_time_count++;
+
+		struct storage * new_packet = (struct storage *)malloc(sizeof(struct storage));
+		new_packet->next_storage 	 = NULL;
+		memcpy(new_packet->data, init, sizeof(init));
+		packet_pointer2 			= broadcast_list->next_storage;
+		new_packet->next_storage 	= packet_pointer2;
+		new_packet->data[6] = self_level;
+		broadcast_list->next_storage = new_packet;
+		NRF_LOG_INFO("init mode enter, init packet created\r\n");
+	}else
+	{
+		return;
 	}
 }
 

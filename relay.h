@@ -26,7 +26,7 @@ void init_storage(void);
 
 void get_adv_data(ble_evt_t * p_ble_evt);
 
-
+void manual_init(void);
 
 #endif
 
