@@ -77,7 +77,6 @@ const ble_gap_scan_params_t m_scan_params2 =
 
 
 
-void advertising_start(void);
 void scanning_start(void);
 void init_storage(void);
 void relay_init(void);
@@ -99,42 +98,6 @@ void relay_init(void);
 void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 {
     app_error_handler(DEAD_BEEF, line_num, p_file_name);
-}
-
-
-/**@brief Function for initializing the Advertising functionality.
- *
- * @details Encodes the required advertising data and passes it to the stack. Also builds a structure to be passed to the stack when starting advertising.
- */
-static void advertising_init(void)
-{
-    uint32_t     		 		err_code;
-    ble_advdata_t 				advdata;
-    uint8_t       				flags 					= BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
-    ble_advdata_manuf_data_t 	manuf_specific_data;
-    uint8_t 					data[] 					= "xxx"; // Our data to adverise。 scanner上显示的0x串中，最后是00，表示结束。
-    uint8_t 					out_data[12]			={0x0b, 0xff, 0x00,0x00,
-														  0x00, 0x00, 0x00, 0x00,
-														  0x00, 0x00, 0x00, 0x00};
-
-    manuf_specific_data.company_identifier 		= 0x0059;
-    manuf_specific_data.data.p_data 			= data;
-    manuf_specific_data.data.size   			= sizeof(data);
-
-    memset(&advdata, 0, sizeof(advdata));
-
-    advdata.name_type             				= BLE_ADVDATA_NO_NAME;
-    advdata.flags                				= flags;
-    advdata.p_manuf_specific_data 				= &manuf_specific_data;
-
-    err_code = ble_advdata_set(&advdata, NULL);
-    APP_ERROR_CHECK(err_code);
-
-    err_code = sd_ble_gap_adv_data_set(out_data, sizeof(out_data), NULL, 0); // 用这句话来躲避掉flag
-    APP_ERROR_CHECK(err_code);
-
-    err_code = sd_ble_gap_tx_power_set(-20); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
-    APP_ERROR_CHECK(err_code);
 }
 
 
@@ -352,7 +315,8 @@ int main(void)
     APP_ERROR_CHECK(err_code);
     NRF_LOG_INFO("###################### System Started ####################\r\n");
     ble_stack_init();
-    advertising_init();
+    err_code = sd_ble_gap_tx_power_set(-20); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
+    APP_ERROR_CHECK(err_code);
     gpio_configure();
     relay_init();
 
