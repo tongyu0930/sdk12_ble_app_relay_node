@@ -1,24 +1,9 @@
-/* Copyright (c) 2014 Nordic Semiconductor. All Rights Reserved.
+/*
+ * main.c
  *
- * The information contained herein is property of Nordic Semiconductor ASA.
- * Terms and conditions of usage are described in detail in NORDIC
- * SEMICONDUCTOR STANDARD SOFTWARE LICENSE AGREEMENT.
- *
- * Licensees are granted free, non-transferable use of the information. NO
- * WARRANTY of ANY KIND is provided. This heading must NOT be removed from
- * the file.
- *
+ *  Author: Tong Yu
  */
 
-/** @file
- *
- * @defgroup ble_sdk_app_beacon_main main.c
- * @{
- * @ingroup ble_sdk_app_beacon
- * @brief Beacon Transmitter Sample Application main file.
- *
- * This file contains the source code for an Beacon transmitter sample application.
- */
 // 最后在删减makefile
 #include <stdbool.h>
 #include <stdint.h>
@@ -38,77 +23,66 @@
 
 
 #define CENTRAL_LINK_COUNT       		0  			/**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
-#define PERIPHERAL_LINK_COUNT    		0  			/**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
+#define PERIPHERAL_LINK_COUNT    		1  			/**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0 			/**< 不懂Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
 #define DEAD_BEEF                       0xDEADBEEF  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
-
-#define APP_CFG_NON_CONN_ADV_TIMEOUT    0 			/**< Time for which the device must be advertising in non-connectable mode (in seconds). 0 disables timeout. */
-#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(100, UNIT_0_625_MS) /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
-#define APP_COMPANY_IDENTIFIER          0x0059  	/**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
-
-													//不知道设置为0004和4000有什么区别，led看起来都闪的一样快。
-#define SCAN_INTERVAL           0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
-#define SCAN_WINDOW             0x0010   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
-#define SCAN_INTERVAL2          0x0040   			//500ms //Scan interval or window is between 0x0004 and 0x4000 in 0.625ms units (2.5ms to 10.24s).
-#define SCAN_WINDOW2            0x0040   			//The scanWindow shall be less than or equal to the scanInterval.Scan window between 0x0004 and 0x4000
-#define SCAN_ACTIVE             0        			/**< If 1, performe active scanning (scan requests). */
-#define SCAN_SELECTIVE          0        			/**< If 1, ignore unknown devices (non whitelisted). */
-#define SCAN_TIMEOUT            0x0000
 
 
 static bool 							started_bro_sca				= false;
 volatile bool 							first_time					= true;
 extern volatile bool 					want_scan;
-extern const uint8_t 					SELF_NUMBER;
-static uint32_t							count						= 0;
+extern volatile uint8_t 				self_level;
+extern volatile bool					scan_only_mode;
 
 
 const ble_gap_adv_params_t m_adv_params =
+  {
+	.type        					= BLE_GAP_ADV_TYPE_ADV_IND,					// Undirected advertisement.
+	//.p_peer_addr->addr_type 		= BLE_GAP_ADDR_TYPE_RANDOM_STATIC,
+	.p_peer_addr					= NULL,												// 我觉得null是不是默认就是static的address？
+	.fp          					= BLE_GAP_ADV_FP_ANY,
+	.interval    					= 0x0020,						// 虽然这个最小值时100ms，但是你可以通过timer以更快的频率启动关闭广播。
+	.timeout     					= 0
+  };
+
+const ble_gap_adv_params_t m_adv_params2 =
   {
 	.type        					= BLE_GAP_ADV_TYPE_ADV_NONCONN_IND,					// Undirected advertisement.
 	//.p_peer_addr->addr_type 		= BLE_GAP_ADDR_TYPE_RANDOM_STATIC,
 	.p_peer_addr					= NULL,												// 我觉得null是不是默认就是static的address？
 	.fp          					= BLE_GAP_ADV_FP_ANY,
-	.interval    					= NON_CONNECTABLE_ADV_INTERVAL,						// 虽然这个最小值时100ms，但是你可以通过timer以更快的频率启动关闭广播。
-	.timeout     					= APP_CFG_NON_CONN_ADV_TIMEOUT
+	.interval    					= 0x0100,						// 虽然这个最小值时100ms，但是你可以通过timer以更快的频率启动关闭广播。
+	.timeout     					= 0
   };
 
 const ble_gap_scan_params_t m_scan_params =
   {
-    .active      = SCAN_ACTIVE,
-    .use_whitelist   = SCAN_SELECTIVE,
+    .active      = 0,
+    .use_whitelist   = 0,
     .adv_dir_report = 0,
-    .interval    = SCAN_INTERVAL,
-    .window      = SCAN_WINDOW,
-    .timeout     = SCAN_TIMEOUT
+    .interval    = 0x0040,
+    .window      = 0x0010,
+    .timeout     = 0
   };
 
 const ble_gap_scan_params_t m_scan_params2 =
   {
-    .active      = SCAN_ACTIVE,
-    .use_whitelist   = SCAN_SELECTIVE,
+    .active      = 0,
+    .use_whitelist   = 0,
     .adv_dir_report = 0,
-    .interval    = SCAN_INTERVAL2,
-    .window      = SCAN_WINDOW2,
-    .timeout     = SCAN_TIMEOUT
+    .interval    = 0x0040,
+    .window      = 0x0040,
+    .timeout     = 0
   };
 
 
 
 void advertising_start(void);
-void scanning_start(bool normal_mode);
+void scanning_start(void);
 void init_storage(void);
+void relay_init(void);
 
 
-
-void HardFault_Handler(void)  //重写HardFault_Handler
-{
-    uint32_t *sp = (uint32_t *) __get_MSP();
-    uint32_t ia = sp[24/4];
-    NRF_LOG_INFO("Hard Fault at address: 0x%08x\r\n", (unsigned int)ia);
-    while(1)
-    	;
-}
 
 
 /**@brief Callback function for asserts in the SoftDevice.
@@ -128,60 +102,6 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 }
 
 
-void app_error_fault_handler(uint32_t id, uint32_t pc, uint32_t info)  //重写app_error_fault_handler
-{
-    // static error variables - in order to prevent removal by optimizers
-    static volatile struct
-    {
-        uint32_t        fault_id;
-        uint32_t        pc;
-        uint32_t        error_info;
-        assert_info_t * p_assert_info;
-        error_info_t  * p_error_info;
-        ret_code_t      err_code;
-        uint32_t        line_num;
-        const uint8_t * p_file_name;
-    } m_error_data = {0};
-
-    // The following variable helps Keil keep the call stack visible, in addition, it can be set to
-    // 0 in the debugger to continue executing code after the error check.
-    volatile bool loop = true;
-    UNUSED_VARIABLE(loop);
-
-    m_error_data.fault_id   = id;
-    m_error_data.pc         = pc;
-    m_error_data.error_info = info;
-
-    switch (id)
-    {
-        case NRF_FAULT_ID_SDK_ASSERT:
-            m_error_data.p_assert_info = (assert_info_t *)info;
-            m_error_data.line_num      = m_error_data.p_assert_info->line_num;
-            m_error_data.p_file_name   = m_error_data.p_assert_info->p_file_name;
-            break;
-
-        case NRF_FAULT_ID_SDK_ERROR:
-            m_error_data.p_error_info = (error_info_t *)info;
-            m_error_data.err_code     = m_error_data.p_error_info->err_code;
-            m_error_data.line_num     = m_error_data.p_error_info->line_num;
-            m_error_data.p_file_name  = m_error_data.p_error_info->p_file_name;
-            break;
-    }
-
-    UNUSED_VARIABLE(m_error_data);
-
-    //NRF_LOG_INFO("ASSERT\r\n\tError: 0x%08x\r\n\tLine: %d\r\n\tFile: %s\r\n", m_error_data.err_code, m_error_data.line_num, m_error_data.p_file_name);
-    NRF_LOG_INFO("error!!!");
-
-    // If printing is disrupted, remove the irq calls, or set the loop variable to 0 in the debugger.
-    __disable_irq();
-
-    while(loop);
-
-    __enable_irq();
-}
-
-
 /**@brief Function for initializing the Advertising functionality.
  *
  * @details Encodes the required advertising data and passes it to the stack. Also builds a structure to be passed to the stack when starting advertising.
@@ -192,25 +112,15 @@ static void advertising_init(void)
     ble_advdata_t 				advdata;
     uint8_t       				flags 					= BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
     ble_advdata_manuf_data_t 	manuf_specific_data;
-    uint8_t 					data[] 					= "xxxxx"; // Our data to adverise。 scanner上显示的0x串中，最后是00，表示结束。
-    uint8_t 					out_data[12]			={0x0b,								//0
-    													  0xff,								//1
-    													  0x00,								//2
-    													  0x00,								//3	//tx_device_success
-														  0x00,								//4	//tx_event_success
-														  0x00,								//5
-														  0x00,								//6
-														  0x00,								//7
-														  SELF_NUMBER,				//8
-														  0x00,								//9
-														  0x01,								//10 //event_number
-														  0x00};							//11
+    uint8_t 					data[] 					= "xxx"; // Our data to adverise。 scanner上显示的0x串中，最后是00，表示结束。
+    uint8_t 					out_data[12]			={0x0b, 0xff, 0x00,0x00,
+														  0x00, 0x00, 0x00, 0x00,
+														  0x00, 0x00, 0x00, 0x00};
 
-    manuf_specific_data.company_identifier 		= APP_COMPANY_IDENTIFIER;
+    manuf_specific_data.company_identifier 		= 0x0059;
     manuf_specific_data.data.p_data 			= data;
     manuf_specific_data.data.size   			= sizeof(data);
 
-    // Build and set advertising data.
     memset(&advdata, 0, sizeof(advdata));
 
     advdata.name_type             				= BLE_ADVDATA_NO_NAME;
@@ -220,27 +130,32 @@ static void advertising_init(void)
     err_code = ble_advdata_set(&advdata, NULL);
     APP_ERROR_CHECK(err_code);
 
-
     err_code = sd_ble_gap_adv_data_set(out_data, sizeof(out_data), NULL, 0); // 用这句话来躲避掉flag
     APP_ERROR_CHECK(err_code);
 
-    err_code = sd_ble_gap_tx_power_set(-40); //设置信号发射强度
-    // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
-    APP_ERROR_CHECK(err_code);// Check for errors
+    err_code = sd_ble_gap_tx_power_set(-20); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
+    APP_ERROR_CHECK(err_code);
 }
 
 
 void advertising_start(void)
 {
     uint32_t err_code;
-    err_code = sd_ble_gap_adv_start(&m_adv_params);
-    APP_ERROR_CHECK(err_code);
+    if(self_level == 2)
+    {
+    	err_code = sd_ble_gap_adv_start(&m_adv_params);
+    	APP_ERROR_CHECK(err_code);
+    }else
+    {
+    	err_code = sd_ble_gap_adv_start(&m_adv_params2);
+    	APP_ERROR_CHECK(err_code);
+    }
 }
 
-void scanning_start(bool normal_mode)
+void scanning_start(void)
 {
 	uint32_t err_code;
-	if(normal_mode)
+	if(scan_only_mode)
 	{
 		err_code = sd_ble_gap_scan_start(&m_scan_params);
 		APP_ERROR_CHECK(err_code);
@@ -249,7 +164,6 @@ void scanning_start(bool normal_mode)
 		err_code = sd_ble_gap_scan_start(&m_scan_params2);
 		APP_ERROR_CHECK(err_code);
 	}
-
 }
 
 
@@ -262,19 +176,6 @@ void scanning_start(bool normal_mode)
 static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
 {
     get_adv_data(p_ble_evt);
-    count++;
-}
-
-
-/**@brief Function for dispatching a system event to interested modules.
- *
- * @details This function is called from the System event interrupt handler after a system event has been received.
- *
- * @param[in] sys_evt  System stack event.
- */
-static void sys_evt_dispatch(uint32_t sys_evt)														//这个function到底何时被call？
-{
-    //ts_on_sys_evt(sys_evt);
 }
 
 
@@ -288,9 +189,7 @@ static void ble_stack_init(void)
     nrf_clock_lf_cfg_t clock_lf_cfg = NRF_CLOCK_LFCLKSRC;
 
     SOFTDEVICE_HANDLER_INIT(&clock_lf_cfg, NULL); 													// Initialize the SoftDevice handler module.
-
     ble_enable_params_t ble_enable_params;
-
     err_code = softdevice_enable_get_default_config(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT, &ble_enable_params);
     APP_ERROR_CHECK(err_code);
 
@@ -300,9 +199,6 @@ static void ble_stack_init(void)
     APP_ERROR_CHECK(err_code);
 
     err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch); 									// Register with the SoftDevice handler module for BLE events.
-    APP_ERROR_CHECK(err_code);
-
-    err_code = softdevice_sys_evt_handler_set(sys_evt_dispatch); 									// Register with the SoftDevice handler module for System (SOC) events.
     APP_ERROR_CHECK(err_code);
 }
 
@@ -315,7 +211,6 @@ static void power_manage(void)
     APP_ERROR_CHECK(err_code);
 }
 
-
 void GPIOTE_IRQHandler(void)
 {
     uint32_t err_code;
@@ -326,8 +221,6 @@ void GPIOTE_IRQHandler(void)
         NRF_GPIOTE->EVENTS_IN[2] = 0;
 
         NRF_GPIO->OUT ^= (1 << 17);
-
-        NRF_LOG_INFO("amount of the received packet = %d\r\n", count);
 
         if(!started_bro_sca)
 		{
@@ -351,7 +244,6 @@ void GPIOTE_IRQHandler(void)
 			}
 			started_bro_sca = false;
 		 }
-
     }
 
     if (NRF_GPIOTE->EVENTS_IN[3] != 0)		// shift
@@ -359,17 +251,11 @@ void GPIOTE_IRQHandler(void)
     	nrf_delay_us(200000);
         NRF_GPIOTE->EVENTS_IN[3] = 0;
 
-//        	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
-//        	NRF_GPIO->OUT ^= (1 << 20);
-//        	NRF_GPIOTE->TASKS_OUT[0];
-//			NRF_LOG_INFO("shift %d \r\n", rand()%10000);
-
         manual_init();
-
     }
 }
-
-// TODO: 去掉button，去掉delay
+// TODO: 去掉log
+// TODO: 去掉button，去掉delay，去掉了就不能manual init 了
 static void gpio_configure(void)
 {
 	NRF_GPIO->DIRSET = LEDS_MASK; // set register
@@ -423,9 +309,37 @@ static void gpio_configure(void)
 	NRF_GPIOTE->INTENSET = GPIOTE_INTENSET_IN1_Msk | GPIOTE_INTENSET_IN2_Msk | GPIOTE_INTENSET_IN3_Msk | GPIOTE_INTENSET_IN4_Msk;
 	NVIC_ClearPendingIRQ(GPIOTE_IRQn);
 	NVIC_SetPriority(GPIOTE_IRQn, APP_IRQ_PRIORITY_LOWEST);
-	NVIC_EnableIRQ(GPIOTE_IRQn); 											 					//declaration值得一看！！！有关IRQ
+	NVIC_EnableIRQ(GPIOTE_IRQn);
 }
 
+
+void relay_init(void)
+{
+	// RTC1
+	NRF_RTC2->TASKS_STOP  = 1;
+	NRF_RTC2->TASKS_CLEAR = 1;
+	NRF_RTC2->PRESCALER   = 0; // 24-bit COUNTER // 12 bit prescaler for COUNTER frequency (32768/(PRESCALER+1))
+	NRF_RTC2->CC[0]       = (0x008000);
+	NRF_RTC2->EVENTS_COMPARE[0] = 0;
+	//NRF_RTC2->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk; // 让event_compare register达到cc的值就清零
+	NRF_RTC2->TASKS_START = 1;
+	NRF_LOG_INFO("count1 started\r\n");
+	NRF_RTC2->EVTENSET	  = RTC_INTENSET_COMPARE0_Msk;
+
+	NRF_PPI->CHENCLR      = (1 << 5);
+	NRF_PPI->CH[5].EEP = (uint32_t) &NRF_RTC2->EVENTS_COMPARE[0];
+	NRF_PPI->CH[5].TEP = (uint32_t) &NRF_EGU3->TASKS_TRIGGER[1];
+	NRF_PPI->CHENSET   = PPI_CHENSET_CH5_Msk; 							// enable
+
+	NVIC_ClearPendingIRQ(SWI3_EGU3_IRQn);
+	NVIC_SetPriority(SWI3_EGU3_IRQn, 7);
+	NVIC_EnableIRQ(SWI3_EGU3_IRQn);
+
+	NRF_GPIO->OUT ^= (1 << 17);
+	init_storage();
+	//first_time 				= true;
+	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
+}
 
 /**
  * @brief Function for application main entry.
@@ -437,51 +351,12 @@ int main(void)
     err_code = NRF_LOG_INIT(NULL);
     APP_ERROR_CHECK(err_code);
     NRF_LOG_INFO("###################### System Started ####################\r\n");
-
-
-
     ble_stack_init();
     advertising_init();
+    gpio_configure();
+    relay_init();
 
-    gpio_configure(); // 注意gpio和timesync是相对独立的，同步时钟本质上不需要gpio
-
-
-
-    // RTC1
-	NRF_RTC2->TASKS_STOP  = 1;
-	NRF_RTC2->TASKS_CLEAR = 1;
-	NRF_RTC2->PRESCALER   = 0; // 24-bit COUNTER // 12 bit prescaler for COUNTER frequency (32768/(PRESCALER+1))
-	NRF_RTC2->CC[0]       = (0x008000);
-	NRF_RTC2->EVENTS_COMPARE[0] = 0;
-	//NRF_RTC2->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk; // 让event_compare register达到cc的值就清零
-	NRF_RTC2->TASKS_START = 1;
-	NRF_LOG_INFO("count1 started\r\n");
-	NRF_RTC2->EVTENSET	  = RTC_INTENSET_COMPARE0_Msk;
-
-
-	NRF_PPI->CHENCLR      = (1 << 5);
-	NRF_PPI->CH[5].EEP = (uint32_t) &NRF_RTC2->EVENTS_COMPARE[0];
-	NRF_PPI->CH[5].TEP = (uint32_t) &NRF_EGU3->TASKS_TRIGGER[1];
-	NRF_PPI->CHENSET   = PPI_CHENSET_CH5_Msk; 							// enable
-
-	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk; 				// Enable interrupt for TRIGGERED[0] event
-	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;				// for test
-	NVIC_ClearPendingIRQ(SWI3_EGU3_IRQn);
-	NVIC_SetPriority(SWI3_EGU3_IRQn, 7);
-	NVIC_EnableIRQ(SWI3_EGU3_IRQn);
-
-//	NRF_PPI->CHENCLR      = (1 << 0);									// for test
-//	NRF_PPI->CH[0].EEP = (uint32_t) &NRF_RTC2->EVENTS_COMPARE[0];		// 如果设置了shortcut，就不用清除compare event：EVENTS_COMPARE[0]＝0
-//	NRF_PPI->CH[0].TEP = (uint32_t) &NRF_GPIOTE->TASKS_OUT[0];
-//	NRF_PPI->CHENSET   = PPI_CHENSET_CH0_Msk; // enable
-
-	NRF_GPIO->OUT ^= (1 << 17);
-	init_storage();
-
-	//first_time 				= true;
-	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
-
-    for (;; ) 																	// Enter main loop.
+    for (;; )
     {
         if (NRF_LOG_PROCESS() == false)
         {

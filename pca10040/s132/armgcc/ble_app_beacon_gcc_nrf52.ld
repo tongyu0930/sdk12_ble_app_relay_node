@@ -1,4 +1,5 @@
-/* Linker script to configure memory regions. RAM (rwx) :  ORIGIN = 0x200032f0, LENGTH = 0xcd10 */
+/* Linker script to configure memory regions. 
+RAM (rwx) :  ORIGIN = 0x200032f0, LENGTH = 0xcd10 */
 
 SEARCH_DIR(.)
 GROUP(-lgcc -lc -lnosys)
@@ -6,7 +7,8 @@ GROUP(-lgcc -lc -lnosys)
 MEMORY
 {
   FLASH (rx) : ORIGIN = 0x1f000, LENGTH = 0x61000
-  RAM (rwx) :  ORIGIN = 0x20001930, LENGTH = 0xe6d0
+  RAM (rwx) :  ORIGIN = 0x20002128, LENGTH = 0xded8
+  //RAM (rwx) :  ORIGIN = 0x20001930, LENGTH = 0xe6d0
 }
 
 SECTIONS

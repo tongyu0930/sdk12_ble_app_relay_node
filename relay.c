@@ -1,4 +1,8 @@
-
+/*
+ * relay.c
+ *
+ *  Author: Tong Yu
+ */
 
 
 #include <stdlib.h>
@@ -6,38 +10,34 @@
 #include "ble.h"
 #include "nrf_log.h"
 #include "app_error.h"
-#include "relay.h"
 
 
-const 				uint8_t 				SELF_NUMBER  					= 3;
-const 				uint8_t 				REPORT_SENDING_INTERVAL			= 20;
-const 				uint8_t 				INIT_TIME_LENGTH				= 10;
-const 				uint8_t 				BREAK_AFTER_INIT				= 10;
-const 				uint8_t 				DELETE_BLOCK_LIST_COUNT			= 60;
-const 				uint8_t 				ADVERTISING_CHANGE				= 60;
-const 				uint8_t 				ADVERTISING_LIMIT				= 120;
-const 				uint8_t 				MINIMUM_SIGNAL_ACCEPT			= 90;
+static const 		uint8_t 				SELF_NUMBER  					= 2;
+static const 		uint8_t 				REPORT_SENDING_INTERVAL			= 20;
+static const 		uint8_t 				INIT_TIME_LENGTH				= 5;
+static const 		uint8_t 				BREAK_AFTER_INIT				= 10;
+static const 		uint8_t 				DELETE_BLOCK_LIST_COUNT			= 60;
+static const 		uint8_t 				ADVERTISING_CHANGE				= 60;
+static const 		uint8_t 				ADVERTISING_LIMIT				= 120;
+static const 		uint8_t 				MINIMUM_SIGNAL_ACCEPT			= 80;
 
 
-
-volatile static 				uint8_t					self_level 						= 200;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
-extern volatile 	bool 					first_time;
-volatile 			bool 					want_scan 		 				= false;
-volatile 			bool 					scan_only_mode 					= true;		// broadcast list 里空时
-volatile static		bool 					copy_data_check					= true;
-volatile static		uint8_t 				init_break_count				= 0;
-volatile static 	uint8_t					init_time_count 	        	= 0;
-volatile static 	uint8_t 				loop							= 2;
-volatile static 	uint8_t 				delete_block_list_count			= 0;
-static const 		uint8_t 				init[13] 						= {0x0c,0xff,'T','O','N','G',0,0,0,0,0,0,0};
-static 				uint8_t 				datacheck[13];
-volatile static 	uint8_t					broadcast_count					= 0;
-volatile static 	uint8_t					message_number					= 1;
-volatile static		bool 					level_changed 					= false;
-volatile static		bool 					self_report_count_start			= false;
-volatile static 	uint8_t					self_report_count				= 0;
-
-
+		volatile			  uint8_t		self_level 						= 200;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
+extern  volatile 	 		  bool 			first_time;
+		volatile 			  bool 			want_scan 		 				= false;
+		volatile 			  bool 			scan_only_mode 					= true;	// broadcast list 里空时
+				 static		  bool 			copy_data_check					= true;
+		volatile static		  uint8_t 		init_break_count				= 0;
+		volatile static 	  uint8_t		init_time_count 	        	= 0;
+				 static		  uint8_t 		loop							= 2;
+				 static 	  uint8_t 		delete_block_list_count			= 0;
+				 static const uint8_t 		init[13] 						= {0x0c,0xff,'T','O','N','G',0,0,0,0,0,0,0};
+				 static		  uint8_t 		datacheck[13];
+				 static		  uint8_t		broadcast_count					= 0;
+				 static		  uint8_t		message_number					= 1;
+				 static		  bool 			level_changed 					= false;
+				 static		  bool 			self_report_count_start			= false;
+				 static		  uint8_t		self_report_count				= 0;
 
 
 static volatile enum
@@ -86,10 +86,8 @@ struct storage * 		packet_pointer2;
 
 
 
-
-
 void advertising_start(void);
-void scanning_start(bool);
+void scanning_start(void);
 void init_storage(void);
 void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint8_t value2, uint8_t input2);
 void delete_packet(struct storage* input_packet);
@@ -97,14 +95,13 @@ void delete_block_list(void);
 uint8_t generate_messsage_number(void);
 void create_self_report(void);
 
-// TODO: center也要能检测alarm
 
 
 void init_storage(void)
 {
 	broadcast_list 					= (struct storage *)calloc(1, sizeof(struct storage));
 	memcpy(broadcast_list->data, init, sizeof(init));
-	broadcast_list->next_storage 		= NULL;
+	broadcast_list->next_storage 	= NULL;
 
 	block_list						= (struct storage *)calloc(1, sizeof(struct storage));
 	memcpy(block_list->data, init, sizeof(init));
@@ -216,7 +213,7 @@ void SWI3_EGU3_IRQHandler(void)
 
 //    if (NRF_EGU3->EVENTS_TRIGGERED[1] != 0)	// 这个if不用要，当有EVENTS_TRIGGERED[2]时才有用
 	NRF_EGU3->EVENTS_TRIGGERED[1] = 0;
-	(void) NRF_EGU3->EVENTS_TRIGGERED[1]; // TODO: 这个也要去掉
+//	(void) NRF_EGU3->EVENTS_TRIGGERED[1]; // 这句不知道干嘛的
 
 
 	if(self_report_count_start)
@@ -262,7 +259,7 @@ void SWI3_EGU3_IRQHandler(void)
 	/************************************************** loop ****************************************************************************************/
 	if(first_time)
 	{
-		scanning_start(true);
+		scanning_start();
 		first_time 	= false;
 		want_scan 	= false;
 	}else
@@ -274,10 +271,10 @@ void SWI3_EGU3_IRQHandler(void)
 				err_code = sd_ble_gap_adv_stop();
 				APP_ERROR_CHECK(err_code);
 				NRF_GPIO->OUT ^= (1 << 17);
-				scanning_start(false);
+				scanning_start();
 			}else
 			{
-				scanning_start(true); //两种scan参数
+				scanning_start();
 			}
 			//NRF_LOG_INFO("scanning\r\n");
 			want_scan = false;
@@ -311,6 +308,7 @@ void SWI3_EGU3_IRQHandler(void)
 						if((broadcast_count > ADVERTISING_CHANGE) && (level_changed == false))
 						{
 							broadcast_list->next_storage->data[6] = self_level + 1;
+							broadcast_list->next_storage->data[8] = generate_messsage_number();
 							datacheck[6] = broadcast_list->next_storage->data[6];
 							level_changed = true;
 							NRF_LOG_INFO("packet level cahnged\r\n");
@@ -502,7 +500,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					break;
 
 				case CENTER_NODE:
-					NRF_LOG_INFO("Center node!!! \r\n");
+//					NRF_LOG_INFO("Center node!!! \r\n");
 					/************************************************ update self_level and filt bad signal**********************************************************/
 					if(p_adv_report->rssi >= (-MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
 					{
