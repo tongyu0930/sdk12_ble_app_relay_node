@@ -79,7 +79,7 @@ const ble_gap_scan_params_t m_scan_params2 =
 
 void scanning_start(void);
 void init_storage(void);
-void relay_init(void);
+static void relay_init(void);
 
 
 
@@ -276,7 +276,7 @@ static void gpio_configure(void)
 }
 
 
-void relay_init(void)
+static void relay_init(void)
 {
 	// RTC1
 	NRF_RTC2->TASKS_STOP  = 1;

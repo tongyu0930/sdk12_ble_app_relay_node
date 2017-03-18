@@ -12,17 +12,18 @@
 #include "app_error.h"
 
 
-static const 		uint8_t 				SELF_NUMBER  					= 2;
-static const 		uint8_t 				REPORT_SENDING_INTERVAL			= 20;
-static const 		uint8_t 				INIT_TIME_LENGTH				= 5;
-static const 		uint8_t 				BREAK_AFTER_INIT				= 10;
-static const 		uint8_t 				DELETE_BLOCK_LIST_COUNT			= 60;
-static const 		uint8_t 				ADVERTISING_CHANGE				= 60;
-static const 		uint8_t 				ADVERTISING_LIMIT				= 120;
-static const 		uint8_t 				MINIMUM_SIGNAL_ACCEPT			= 80;
+#define 									SELF_NUMBER  					 2
+#define 									REPORT_SENDING_INTERVAL			 20
+#define 									INIT_TIME_LENGTH				 5
+#define 									BREAK_AFTER_INIT				 10
+#define 									DELETE_BLOCK_LIST_COUNT			 60
+#define 									ADVERTISING_CHANGE				 60
+#define 									ADVERTISING_LIMIT				 120
+#define 									MINIMUM_SIGNAL_ACCEPT			 80
+#define 									LOOP_PERIOD						 0x008000
 
 
-		volatile			  uint8_t		self_level 						= 200;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
+		volatile			  uint8_t		self_level 						= 20;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
 extern  volatile 	 		  bool 			first_time;
 		volatile 			  bool 			want_scan 		 				= false;
 		volatile 			  bool 			scan_only_mode 					= true;	// broadcast list 里空时
@@ -40,27 +41,27 @@ extern  volatile 	 		  bool 			first_time;
 				 static		  uint8_t		self_report_count				= 0;
 
 
-static volatile enum
+volatile static enum
 {
     INIT_MODE,
     NORMAL_MODE
 } mode = NORMAL_MODE;
 
-static volatile enum
+static enum
 {
     LOWER_LEVEL,
 	HIGHER_LEVEL,
 	SAME_LEVEL
 } node_level;
 
-static volatile enum
+static enum
 {
     RELAY_NODE,
 	ALARM_NODE,
 	CENTER_NODE
 } node_type;
 
-static volatile enum
+static enum
 {
 	BROADCAST_PACKET,
 	BLOCK_PACKET,
@@ -68,7 +69,7 @@ static volatile enum
 	INIT_PACKET,
 	ALARM_ACK_PACKET,
 	ALARM_PACKET,
-	NO
+	NONE
 } create_packet;
 
 
@@ -89,11 +90,11 @@ struct storage * 		packet_pointer2;
 void advertising_start(void);
 void scanning_start(void);
 void init_storage(void);
-void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint8_t value2, uint8_t input2);
-void delete_packet(struct storage* input_packet);
-void delete_block_list(void);
-uint8_t generate_messsage_number(void);
-void create_self_report(void);
+static void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint8_t value2, uint8_t input2);
+static void delete_packet(struct storage* input_packet);
+static void delete_block_list(void);
+static uint8_t generate_messsage_number(void);
+static void create_self_report(void);
 
 
 
@@ -117,7 +118,7 @@ void init_storage(void)
 }
 
 
-void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint8_t value2, uint8_t input2)
+static void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint8_t value2, uint8_t input2)
 {
 	struct storage* temporary_pointer = list_name;
 	struct storage* temporary_pointer_before;
@@ -134,7 +135,7 @@ void check_list(struct storage * list_name, uint8_t value1, uint8_t input1, uint
 }
 
 
-void delete_packet(struct storage* input_packet_pointer)
+static void delete_packet(struct storage* input_packet_pointer)
 {
 	if(input_packet_pointer->next_storage->next_storage == NULL) //  如果最后一个
 	{
@@ -152,7 +153,7 @@ void delete_packet(struct storage* input_packet_pointer)
 }
 
 
-void delete_block_list(void)
+static void delete_block_list(void)
 {
 	struct storage* temporary_pointer = block_list;
 	struct storage* temporary_pointer_before;
@@ -178,7 +179,7 @@ void delete_block_list(void)
 	return;
 }
 
-uint8_t generate_messsage_number(void)
+static uint8_t generate_messsage_number(void)
 {
 	message_number++;
 	if(message_number > 200)
@@ -188,7 +189,7 @@ uint8_t generate_messsage_number(void)
 	return message_number;
 }
 
-void create_self_report(void)
+static void create_self_report(void)
 {
 	check_list(broadcast_list, 0, 0, 0, 0); // init mode肯定不会是9，所以会返回最后一个event的指针
 	struct storage * new_packet = (struct storage *)malloc(sizeof(struct storage));
@@ -250,8 +251,8 @@ void SWI3_EGU3_IRQHandler(void)
 	/************************************************** loop interval change ******************************************************************************/
 	if(loop%2)			// 就是说scan的时间是不变的，idle 或 broadcast 的时间会有所减小
 	{
-		if(scan_only_mode) { NRF_TIMER2->CC[0] = (0x008000) - (rand()%10000); }
-				   else { NRF_TIMER2->CC[0] = (0x008000) - (rand()%10000); }
+		if(scan_only_mode) { NRF_RTC2->CC[0] = LOOP_PERIOD - (rand()%10000); }
+				   else { NRF_RTC2->CC[0] = LOOP_PERIOD - (rand()%10000); }
 		// TODO: 去掉了变频扫描,最后测电流时再搞，万一不省电再搞回来。
 	}
 	loop++;
@@ -375,7 +376,6 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 	ble_gap_evt_t * p_gap_evt = &p_ble_evt->evt.gap_evt;
 	ble_gap_evt_adv_report_t * p_adv_report = &p_gap_evt->params.adv_report; // 这个report里还有peer地址，信号强度等可以利用的信息。
 	uint8_t *p_data = (uint8_t *)p_adv_report->data;
-	create_packet = NO;
 
 	while (index < p_adv_report->dlen)
 	    {
@@ -392,7 +392,6 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				if(!((p_data[a]== 'T') && (p_data[a+1]== 'O') && (p_data[a+2]== 'N') && (p_data[a+3]== 'G')))
 				{
 					return;
-
 				}
 				/************************************************ check node type *********************************************************************/
 				if(field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME)
@@ -462,6 +461,8 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 //					}
 //				}
 				/************************************************ switch node type *********************************************************************/
+				create_packet = NONE;
+
 				switch(node_type)
 				{
 				case ALARM_NODE:	// alarm nodes' number start from 2
@@ -750,7 +751,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					NRF_LOG_INFO("new alarm ack packet created\r\n");
 					break;
 
-				case NO:
+				case NONE:
 					break;
 				}
 			return;
