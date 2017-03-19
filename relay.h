@@ -1,10 +1,11 @@
 #ifndef __RELAY_H__
 #define __RELAY_H__
 
-#include <stdbool.h>
+#include <stdlib.h>
 #include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
 #include "nrf.h"
-
 
 void init_storage(void);
 

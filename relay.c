@@ -6,11 +6,11 @@
 
 
 #include <stdlib.h>
-#include "ble_gap.h"
+#include <stdint.h>
+#include <stdbool.h>
+#include <string.h>
 #include "ble.h"
-#include "nrf_log.h"
-#include "app_error.h"
-
+#include "nrf.h"
 
 #define 									SELF_NUMBER  					 2
 #define 									REPORT_SENDING_INTERVAL			 20
@@ -20,8 +20,7 @@
 #define 									ADVERTISING_CHANGE				 60
 #define 									ADVERTISING_LIMIT				 120
 #define 									MINIMUM_SIGNAL_ACCEPT			 80
-#define 									LOOP_PERIOD						 0x008000
-
+#define 									LOOP_PERIOD						 0x050000
 
 		volatile			  uint8_t		self_level 						= 20;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
 extern  volatile 	 		  bool 			first_time;
@@ -112,9 +111,9 @@ void init_storage(void)
 	memcpy(ack_list->data, init, sizeof(init));
 	ack_list->next_storage 		= NULL;
 
-	NRF_LOG_INFO("3 lists created\r\n");
-	NRF_LOG_INFO("init mode ready\r\n");
-	NRF_LOG_INFO("normal mode on\r\n");
+	//NRF_LOG_INFO("3 lists created\r\n");
+	//NRF_LOG_INFO("init mode ready\r\n");
+	//NRF_LOG_INFO("normal mode on\r\n");
 }
 
 
@@ -141,13 +140,13 @@ static void delete_packet(struct storage* input_packet_pointer)
 	{
 		free(input_packet_pointer->next_storage);
 		input_packet_pointer->next_storage = NULL;	// 补上NULL
-		NRF_LOG_INFO("last event freed\r\n");
+		//NRF_LOG_INFO("last event freed\r\n");
 	}else
 	{
 		packet_pointer2 = input_packet_pointer->next_storage->next_storage;
 		free(input_packet_pointer->next_storage);
 		input_packet_pointer->next_storage = packet_pointer2; // 接上
-		NRF_LOG_INFO("middle event freed\r\n");
+		//NRF_LOG_INFO("middle event freed\r\n");
 	}
 	return;
 }
@@ -173,9 +172,9 @@ static void delete_block_list(void)
 		free(temporary_pointer);
 		temporary_pointer_before->next_storage = NULL;
 
-		NRF_LOG_INFO("block_list one event deleted\r\n");
+		//NRF_LOG_INFO("block_list one event deleted\r\n");
 	}
-	NRF_LOG_INFO("block_list all deleted\r\n");
+	//NRF_LOG_INFO("block_list all deleted\r\n");
 	return;
 }
 
@@ -201,12 +200,12 @@ static void create_self_report(void)
 	new_packet->data[10] = SELF_NUMBER;
 	new_packet->data[11] = self_level;
 	packet_pointer->next_storage = new_packet;
-	NRF_LOG_INFO("self report packet created\r\n");
+	//NRF_LOG_INFO("self report packet created\r\n");
 }
 
 void SWI3_EGU3_IRQHandler(void)
 {
-	uint32_t err_code;
+
 
 //	if(NRF_RTC2->EVENTS_COMPARE[0] != 0)
 	NRF_RTC2->EVENTS_COMPARE[0] = 0;
@@ -235,7 +234,7 @@ void SWI3_EGU3_IRQHandler(void)
 		{
 			init_time_count = 0;
 			init_break_count = 0;
-			NRF_LOG_INFO("init mode ready\r\n");
+			//NRF_LOG_INFO("init mode ready\r\n");
 		}
 	}
 	/************************************************** delete_block_list_count ******************************************************************************/
@@ -269,20 +268,19 @@ void SWI3_EGU3_IRQHandler(void)
 		{
 			if(!scan_only_mode)
 			{
-				err_code = sd_ble_gap_adv_stop();
-				APP_ERROR_CHECK(err_code);
+				sd_ble_gap_adv_stop();
+
 				NRF_GPIO->OUT ^= (1 << 17);
 				scanning_start();
 			}else
 			{
 				scanning_start();
 			}
-			//NRF_LOG_INFO("scanning\r\n");
+			////NRF_LOG_INFO("scanning\r\n");
 			want_scan = false;
 		}else
 		{
-			err_code = sd_ble_gap_scan_stop(); // stop scanning
-			APP_ERROR_CHECK(err_code);
+			sd_ble_gap_scan_stop(); // stop scanning
 
 			if(ack_list->next_storage != NULL)	// 如果播报ack时遇上initmode，那也没关系，ack播一次就没了，然后就进入init，进入init时不会在听到其他relay and alarm node的声音了
 			{
@@ -292,7 +290,7 @@ void SWI3_EGU3_IRQHandler(void)
 				delete_packet(ack_list);
 				scan_only_mode = false;	// 设为false，在扫描前才会先关闭广播再扫描，要不然就直接扫描了，然后你如果再开启广播就出现错误
 				want_scan = true;
-				NRF_LOG_INFO("broadcasting confirm list\r\n");
+				//NRF_LOG_INFO("broadcasting confirm list\r\n");
 				//NRF_EGU3->INTENCLR 		= EGU_INTENCLR_TRIGGERED1_Msk;
 			}else
 			{
@@ -312,20 +310,20 @@ void SWI3_EGU3_IRQHandler(void)
 							broadcast_list->next_storage->data[8] = generate_messsage_number();
 							datacheck[6] = broadcast_list->next_storage->data[6];
 							level_changed = true;
-							NRF_LOG_INFO("packet level cahnged\r\n");
+							//NRF_LOG_INFO("packet level cahnged\r\n");
 						}
 						if(broadcast_count > ADVERTISING_LIMIT)
 						{
 							delete_packet(broadcast_list); // 如果降级后也没人要的话，这个packet被抛弃了，要不然这辈子就卡在这个packet上了
 							broadcast_count = 0;
 							level_changed = false;
-							NRF_LOG_INFO("paceket removed because nobody want this\r\n");
+							//NRF_LOG_INFO("paceket removed because nobody want this\r\n");
 						}
 					}else
 					{
 						broadcast_count = 0;
 						level_changed = false;
-						NRF_LOG_INFO("top of the broadcast list changed\r\n");
+						//NRF_LOG_INFO("top of the broadcast list changed\r\n");
 						copy_data_check = true;
 					}
 					scan_only_mode = false;
@@ -333,7 +331,7 @@ void SWI3_EGU3_IRQHandler(void)
 				if(scan_only_mode)
 				{
 					want_scan = true;
-					//NRF_LOG_INFO("normal mode\r\n");
+					////NRF_LOG_INFO("normal mode\r\n");
 					return;
 				}else
 				{
@@ -345,10 +343,10 @@ void SWI3_EGU3_IRQHandler(void)
 						if(init_time_count >= INIT_TIME_LENGTH)
 						{
 							mode = NORMAL_MODE;
-							NRF_LOG_INFO("init mode off, back to normal mode\r\n");
+							//NRF_LOG_INFO("init mode off, back to normal mode\r\n");
 							/************************************************** delete init packet ********************************************************/
 							delete_packet(broadcast_list);
-							NRF_LOG_INFO("init packet deleted\r\n");
+							//NRF_LOG_INFO("init packet deleted\r\n");
 							/************************************************** creat report *************************************************************/
 							create_self_report();
 							self_report_count_start = true;
@@ -361,7 +359,7 @@ void SWI3_EGU3_IRQHandler(void)
 					}
 					advertising_start();
 					NRF_GPIO->OUT ^= (1 << 17);
-					NRF_LOG_INFO("broadcasting broadcast list\r\n");
+					//NRF_LOG_INFO("broadcasting broadcast list\r\n");
 					want_scan = true;
 				}
 			}
@@ -384,7 +382,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 			if ((field_type == BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA) || (field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME))
 			{
-//				NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
+//				//NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
 //				return;
 				uint8_t a = index+2;
 				/************************************************ check origin *********************************************************************/
@@ -501,7 +499,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					break;
 
 				case CENTER_NODE:
-//					NRF_LOG_INFO("Center node!!! \r\n");
+//					//NRF_LOG_INFO("Center node!!! \r\n");
 					/************************************************ update self_level and filt bad signal**********************************************************/
 					if(p_adv_report->rssi >= (-MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
 					{
@@ -538,49 +536,22 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							create_packet = BLOCK_PACKET;
 						}
 					}
-
-
-
-//					if((p_data[a+5]== 0) && (p_data[a+6]== 0))
-//					{
-//						if(init_time_count == 0)
-//						{
-//							mode = INIT_MODE;
-//							init_break_count++;
-//							init_time_count++;
-//							create_packet = INIT_PACKET;
-//						}else
-//						{
-//							return;
-//						}
-//					}else
-//					{
-//						check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
-//						if(packet_pointer->next_storage == NULL)
-//						{
-//							return;
-//						}else
-//						{
-//							delete_packet(packet_pointer);
-//							create_packet = BLOCK_PACKET;
-//						}
-//					}
 					break;
 
 				case RELAY_NODE:
-					NRF_LOG_INFO("Relay node!!! \r\n");
+					//NRF_LOG_INFO("Relay node!!! \r\n");
 					/************************************************ update self_level and filter bad signal**********************************************************/
 					if(p_adv_report->rssi >= (-MINIMUM_SIGNAL_ACCEPT))
 					{
 						if(p_data[a+4] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 						{
 							self_level = p_data[a+4] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
-							NRF_LOG_INFO("self level changed to %d \r\n",self_level)
+							//NRF_LOG_INFO("self level changed to %d \r\n",self_level)
 						}
 						if(mode == INIT_MODE)
 						{
 							broadcast_list->next_storage->data[6] = self_level;
-							NRF_LOG_INFO("init packet level updated \r\n")
+							//NRF_LOG_INFO("init packet level updated \r\n")
 							return;
 						}
 					}else
@@ -590,7 +561,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					/************************************************ check mode *********************************************************************/
 					if((p_data[a+5] == 0) && (p_data[a+6] == 0))	// 只要收到一次 就开启init mode， 为了防止你自己到时间停止了，然后别人还没停止，还继续传播init指令，这样你听到指令又进入init模式，没完没了了。
 					{
-						NRF_LOG_INFO("double 0 \r\n")
+						//NRF_LOG_INFO("double 0 \r\n")
 						if(init_time_count == 0)
 						{
 							mode = INIT_MODE;
@@ -695,7 +666,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					new_packet->data[11] = p_data[a+9];
 					new_packet->data[12] = p_data[a+10];
 					packet_pointer->next_storage = new_packet; 				// 接起来
-					NRF_LOG_INFO("new broadcast packet created\r\n");
+					//NRF_LOG_INFO("new broadcast packet created\r\n");
 					break;
 
 				case BLOCK_PACKET:
@@ -705,7 +676,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					new_packet->data[12] = p_data[a+10]; 					// block packet 不用添加其他没用的数值 因为这些数值也不会被广播或者被check
 					packet_pointer->next_storage = new_packet; 				// 接起来
 					delete_block_list_count = 0;							//reset count
-					NRF_LOG_INFO("new block packet created\r\n");
+					//NRF_LOG_INFO("new block packet created\r\n");
 					break;
 
 				case RELAY_ACK_PACKET:
@@ -714,7 +685,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					new_packet->data[8] = p_data[a+6];
 					new_packet->data[9] = 1;
 					packet_pointer->next_storage = new_packet; 				// 接起来
-					NRF_LOG_INFO("new relay ack packet created\r\n");
+					//NRF_LOG_INFO("new relay ack packet created\r\n");
 					break;
 
 				case INIT_PACKET:
@@ -722,7 +693,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					new_packet->next_storage 	= packet_pointer2;
 					new_packet->data[6] = self_level;
 					broadcast_list->next_storage = new_packet;
-					NRF_LOG_INFO("init mode enter, init packet created\r\n");
+					//NRF_LOG_INFO("init mode enter, init packet created\r\n");
 					break;
 
 				case ALARM_PACKET:
@@ -740,7 +711,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					}
 					new_packet->data[12] = p_data[a+7];
 					packet_pointer->next_storage = new_packet; 				// 接起来
-					NRF_LOG_INFO("new alarm packet created\r\n");
+					//NRF_LOG_INFO("new alarm packet created\r\n");
 					break;
 
 				case ALARM_ACK_PACKET:
@@ -748,7 +719,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					new_packet->data[7] = SELF_NUMBER;						// 有必要加这句吗，不加会不会被以为是initmode
 					new_packet->data[9] = p_data[a+7];
 					packet_pointer->next_storage = new_packet; 				// 接起来
-					NRF_LOG_INFO("new alarm ack packet created\r\n");
+					//NRF_LOG_INFO("new alarm ack packet created\r\n");
 					break;
 
 				case NONE:
@@ -775,12 +746,10 @@ void manual_init(void)
 		new_packet->next_storage 	= packet_pointer2;
 		new_packet->data[6] = self_level;
 		broadcast_list->next_storage = new_packet;
-		NRF_LOG_INFO("init mode enter, init packet created\r\n");
+		//NRF_LOG_INFO("init mode enter, init packet created\r\n");
 	}else
 	{
 		return;
 	}
 }
 
-//NRF_LOG_INFO("NEW!!! device: %d and event: %d self_event: %d\r\n", in_device_number, in_event_number, self_event_number-1);
-//NRF_LOG_INFO("in_data = %x\r\n", in_data[3]);
