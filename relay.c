@@ -12,14 +12,14 @@
 #include "app_error.h"
 
 
-#define 									SELF_NUMBER  					 2
+#define 									SELF_NUMBER  					 1
 #define 									REPORT_SENDING_INTERVAL			 20
 #define 									INIT_TIME_LENGTH				 5
 #define 									BREAK_AFTER_INIT				 10
 #define 									DELETE_BLOCK_LIST_COUNT			 60
 #define 									ADVERTISING_CHANGE				 60
 #define 									ADVERTISING_LIMIT				 120
-#define 									MINIMUM_SIGNAL_ACCEPT			 80
+#define 									MINIMUM_SIGNAL_ACCEPT			 70
 #define 									LOOP_PERIOD						 0x008000
 
 
@@ -351,7 +351,6 @@ void SWI3_EGU3_IRQHandler(void)
 							NRF_LOG_INFO("init packet deleted\r\n");
 							/************************************************** creat report *************************************************************/
 							create_self_report();
-							self_report_count_start = true;
 						}
 					}
 					sd_ble_gap_adv_data_set(broadcast_list->next_storage->data, sizeof(broadcast_list->next_storage->data), NULL, 0);
@@ -514,12 +513,14 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					if((p_data[a+4] == 0x30) && (p_data[a+5] == 0x30)) // “TONG00"
 					{
 						self_level = 2; // for test
+						self_report_count_start = true;
 						if(init_time_count == 0)
 						{
 							mode = INIT_MODE;
 							init_break_count++;
 							init_time_count++;
 							create_packet = INIT_PACKET;
+							self_report_count_start = true;
 						}else
 						{
 							return;
@@ -575,6 +576,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						if(p_data[a+4] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 						{
 							self_level = p_data[a+4] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
+							self_report_count_start = true;
 							NRF_LOG_INFO("self level changed to %d \r\n",self_level)
 						}
 						if(mode == INIT_MODE)
