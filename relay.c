@@ -13,13 +13,13 @@
 #include "app_error.h"
 
 
-#define 									SELF_NUMBER  					 1
-#define 									REPORT_SENDING_INTERVAL			 40
+#define 									SELF_NUMBER  					 2
+#define 									REPORT_SENDING_INTERVAL			 240
 #define 									INIT_TIME_LENGTH				 5
 #define 									BREAK_AFTER_INIT				 10
-#define 									DELETE_BLOCK_LIST_COUNT			 10
-#define 									ADVERTISING_CHANGE				 20
-#define 									ADVERTISING_LIMIT				 30
+#define 									DELETE_BLOCK_LIST_COUNT			 100
+#define 									ADVERTISING_CHANGE				 15
+#define 									ADVERTISING_LIMIT				 20
 #define 									MINIMUM_SIGNAL_ACCEPT			-90
 #define 									MINIMUM_SIGNAL_ACCEPT_CENTER	-90
 #define 									LOOP_PERIOD						 0x008000 //0x008000 is 1 second
@@ -312,7 +312,8 @@ void SWI3_EGU3_IRQHandler(void)
 						{
 							broadcast_list->next_storage->data[9] = 1;
 							broadcast_list->next_storage->data[8] = generate_messsage_number();
-							datacheck[6] = broadcast_list->next_storage->data[6];
+							datacheck[9] = broadcast_list->next_storage->data[9];
+							datacheck[8] = broadcast_list->next_storage->data[8];
 							adv_packet_content_changed = true;
 							NRF_LOG_INFO("packet level cahnged\r\n");
 						}
@@ -321,7 +322,7 @@ void SWI3_EGU3_IRQHandler(void)
 							delete_packet(broadcast_list); // 如果降级后也没人要的话，这个packet被抛弃了，要不然这辈子就卡在这个packet上了
 							broadcast_count = 0;
 							adv_packet_content_changed = false;
-							NRF_LOG_INFO("paceket removed because nobody want this\r\n");
+							NRF_LOG_INFO("paceket removed because nobody want this!!!!!!!\r\n");
 						}
 					}else
 					{
@@ -385,15 +386,15 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 			if ((field_type == BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA) || (field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME))
 			{
-				NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
-				if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
-				{
-					NRF_GPIO->OUT &= ~(1 << 20);
-				}else
-				{
-					NRF_GPIO->OUT |= (1 << 20);
-				}
-				return;
+//				NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
+//				if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
+//				{
+//					NRF_GPIO->OUT &= ~(1 << 20);
+//				}else
+//				{
+//					NRF_GPIO->OUT |= (1 << 20);
+//				}
+//				return;
 
 				uint8_t a = index+2;
 				/************************************************ check origin *********************************************************************/
@@ -585,7 +586,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					break;
 
 				case RELAY_NODE:
-					NRF_LOG_INFO("Relay node!!! \r\n");
+//					NRF_LOG_INFO("Relay node!!! \r\n");
 					/************************************************ update self_level and filter bad signal**********************************************************/
 					if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT))
 					{
@@ -593,7 +594,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						{
 							self_level = p_data[a+4] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
 							self_report_count_start = true;
-							NRF_LOG_INFO("self level changed to %d \r\n",self_level)
+//							NRF_LOG_INFO("self level changed to %d \r\n",self_level)
 						}
 						if(mode == INIT_MODE)
 						{
@@ -638,7 +639,14 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							if(packet_pointer->next_storage == NULL)
 							{
 								//return;
-								create_packet = BLOCK_PACKET;
+								check_list(block_list, 7, p_data[a+5], 8, p_data[a+6]);
+								if(packet_pointer->next_storage == NULL)
+								{
+									create_packet = BLOCK_PACKET;
+								}else
+								{
+									return;
+								}
 							}else
 							{
 								delete_packet(packet_pointer);
@@ -650,6 +658,10 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
 							if(packet_pointer->next_storage != NULL)
 							{
+								if((p_data[a+7] == 1) && (p_data[a+8] != 0)) // this is a help-asking packet
+								{
+									return;
+								}
 								delete_packet(packet_pointer);
 								create_packet = BLOCK_PACKET;
 							}else
@@ -662,7 +674,12 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 								{
 									if((p_data[a+7] == 1) && (p_data[a+8] != 0))	// this is a help-asking packet
 									{
-										create_packet = BROADCAST_PACKET;	// 帮同级转发
+										check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
+										if(packet_pointer->next_storage == NULL)
+										{
+											create_packet = BROADCAST_PACKET;	// 帮同级转发 如果两个同时请求互相帮助，那将是没完没了
+											NRF_LOG_INFO("I am helping same level! \r\n")
+										}
 									}else
 									{
 										create_packet = BLOCK_PACKET;
