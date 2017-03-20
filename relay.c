@@ -13,15 +13,16 @@
 #include "ble.h"
 #include "nrf.h"
 
-#define 									SELF_NUMBER  					 3
-#define 									REPORT_SENDING_INTERVAL			 40
+#define 									SELF_NUMBER  					 4
+#define 									REPORT_SENDING_INTERVAL			 180
 #define 									INIT_TIME_LENGTH				 5
 #define 									BREAK_AFTER_INIT				 10
-#define 									DELETE_BLOCK_LIST_COUNT			 10
-#define 									ADVERTISING_CHANGE				 20
-#define 									ADVERTISING_LIMIT				 30
+#define 									DELETE_BLOCK_LIST_COUNT			 15
+#define 									ADVERTISING_CHANGE				 10
+#define 									ADVERTISING_LIMIT				 20
 #define 									MINIMUM_SIGNAL_ACCEPT			-90
 #define 									LOOP_PERIOD						 0x008000	//0x008000 is 1 second
+#define 									ALARM_SENDING_TIME				 5
 
 		volatile			  uint8_t		self_level 						= 20;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
 extern  volatile 	 		  bool 			first_time;
@@ -299,7 +300,8 @@ void SWI3_EGU3_IRQHandler(void)
 						{
 							broadcast_list->next_storage->data[9] = 1;
 							broadcast_list->next_storage->data[8] = generate_messsage_number();
-							datacheck[6] = broadcast_list->next_storage->data[6];
+							datacheck[9] = broadcast_list->next_storage->data[9];
+							datacheck[8] = broadcast_list->next_storage->data[8];
 							adv_packet_content_changed = true;
 							//NRF_LOG_INFO("packet level cahnged\r\n");
 						}
@@ -432,7 +434,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					check_list(block_list, 12, p_data[a+7], 1, 0xff);	// data[1] 肯定是 0xff
 					if(packet_pointer->next_storage != NULL)
 					{
-						if(p_data[a+6] > 10) // 如果alarm的count大于10了，再给他ACK
+						if(p_data[a+6] > ALARM_SENDING_TIME) // 如果alarm的count大于10了，再给他ACK
 						{
 							check_list(ack_list, 9, p_data[a+7], 1, 0xff);
 							if(packet_pointer->next_storage == NULL)
@@ -470,8 +472,14 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						return;
 					}
 					/************************************************ mode **********************************************************/
-					if((p_data[a+4] == 0x30) && (p_data[a+5] == 0x30)) // “TONG00"
+					if((p_data[a+4] == 0x30) && (p_data[a+5] == 0x31) && (p_data[a+6] == 0x30)
+							 && (p_data[a+7] == 0x30) && (p_data[a+8] == 0x30) && (p_data[a+9] == 0x30)) // “TONG01000000"
 					{
+						if((p_data[a+10] != 0x30) || (p_data[a+11] != 0x30))
+						{
+							return; // 不管center给alarm的ACK
+						}
+
 						self_level = 2; // for test
 						self_report_count_start = true;
 						if(init_time_count == 0)
@@ -486,8 +494,8 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						}
 					}else
 					{	// TONG01xxxx
-						uint8_t num1 = (p_data[a+4] - 48) * 16 + (p_data[a+5] - 48);
-						uint8_t num2 = (p_data[a+6] - 48) * 16 + (p_data[a+7] - 48);
+						uint8_t num1 = (p_data[a+6] - 48) * 16 + (p_data[a+7] - 48);
+						uint8_t num2 = (p_data[a+8] - 48) * 16 + (p_data[a+9] - 48);
 						check_list(broadcast_list, 7, num1, 8, num2);
 						if(packet_pointer->next_storage == NULL)
 						{
@@ -554,8 +562,14 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]); // 比较rssi的原因是可能你会同时听见个人摔倒。那比较number和rssi就够了啊！万一rssi一样呢？
 							if(packet_pointer->next_storage == NULL)
 							{
-								create_packet = BLOCK_PACKET;
-								//return;
+								check_list(block_list, 7, p_data[a+5], 8, p_data[a+6]);
+								if(packet_pointer->next_storage == NULL)
+								{
+									create_packet = BLOCK_PACKET;
+								}else
+								{
+									return;
+								}
 							}else
 							{
 								delete_packet(packet_pointer);
@@ -567,6 +581,10 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
 							if(packet_pointer->next_storage != NULL)
 							{
+								if((p_data[a+7] == 1) && (p_data[a+8] != 0)) // this is a help-asking packet
+								{
+									return;
+								}
 								delete_packet(packet_pointer);
 								create_packet = BLOCK_PACKET;
 							}else
@@ -579,7 +597,12 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 								{
 									if((p_data[a+7] == 1) && (p_data[a+8] != 0))	// this is a help-asking packet
 									{
-										create_packet = BROADCAST_PACKET;	// 帮同级转发
+										check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
+										if(packet_pointer->next_storage == NULL)
+										{
+											create_packet = BROADCAST_PACKET;	// 帮同级转发 如果两个同时请求互相帮助，那将是没完没了
+											//NRF_LOG_INFO("I am helping same level! \r\n")
+										}
 									}else
 									{
 										create_packet = BLOCK_PACKET;

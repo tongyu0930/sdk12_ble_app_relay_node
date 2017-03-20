@@ -45,8 +45,8 @@ const ble_gap_scan_params_t m_scan_params =
     .active      = 0,
     .use_whitelist   = 0,
     .adv_dir_report = 0,
-    .interval    = 0x4000,
-    .window      = 0x2000,
+    .interval    = 0x0040,
+    .window      = 0x0010,
     .timeout     = 0
   };
 
@@ -70,10 +70,10 @@ void advertising_start(void)
 {
     if(self_level == 2)
     {
-    	sd_ble_gap_adv_start(&m_adv_params);
+    	sd_ble_gap_adv_start(&m_adv_params); // TODO:
     }else
     {
-    	sd_ble_gap_adv_start(&m_adv_params2);
+    	sd_ble_gap_adv_start(&m_adv_params);
     }
 }
 
