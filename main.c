@@ -21,7 +21,7 @@
 #include "relay.h"
 #include "nrf_error.h"
 
-
+#define TX_POWER       					-20 // accepted values are -40, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
 #define CENTRAL_LINK_COUNT       		0  			/**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
 #define PERIPHERAL_LINK_COUNT    		1  			/**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0 			/**< 不懂Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
@@ -242,10 +242,10 @@ static void gpio_configure(void)
 
 	nrf_delay_us(5000);																			// Do I have to delay?
 
-	NRF_GPIOTE->CONFIG[0] = (GPIOTE_CONFIG_MODE_Task       << GPIOTE_CONFIG_MODE_Pos)     |
-							(GPIOTE_CONFIG_OUTINIT_High    << GPIOTE_CONFIG_OUTINIT_Pos)  |
-							(GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos) |
-							(19                            << GPIOTE_CONFIG_PSEL_Pos);			// 19 is the pin number for testing
+//	NRF_GPIOTE->CONFIG[0] = (GPIOTE_CONFIG_MODE_Task       << GPIOTE_CONFIG_MODE_Pos)     |
+//							(GPIOTE_CONFIG_OUTINIT_High    << GPIOTE_CONFIG_OUTINIT_Pos)  |
+//							(GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos) |
+//							(19                            << GPIOTE_CONFIG_PSEL_Pos);			// 19 is the pin number for testing
 
 	NRF_GPIOTE->CONFIG[1] = (GPIOTE_CONFIG_MODE_Event      << GPIOTE_CONFIG_MODE_Pos)     |
 							(GPIOTE_CONFIG_OUTINIT_Low     << GPIOTE_CONFIG_OUTINIT_Pos)  |
@@ -315,7 +315,7 @@ int main(void)
     APP_ERROR_CHECK(err_code);
     NRF_LOG_INFO("###################### System Started ####################\r\n");
     ble_stack_init();
-    err_code = sd_ble_gap_tx_power_set(-20); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
+    err_code = sd_ble_gap_tx_power_set(TX_POWER); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
     APP_ERROR_CHECK(err_code);
     gpio_configure();
     relay_init();

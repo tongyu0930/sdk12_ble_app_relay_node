@@ -19,7 +19,8 @@
 #define 									DELETE_BLOCK_LIST_COUNT			 60
 #define 									ADVERTISING_CHANGE				 60
 #define 									ADVERTISING_LIMIT				 120
-#define 									MINIMUM_SIGNAL_ACCEPT			 70
+#define 									MINIMUM_SIGNAL_ACCEPT			-50
+#define 									MINIMUM_SIGNAL_ACCEPT_CENTER	-80
 #define 									LOOP_PERIOD						 0x008000
 
 
@@ -383,8 +384,16 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 			if ((field_type == BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA) || (field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME))
 			{
-//				NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
-//				return;
+				NRF_LOG_INFO("RSSI = %d\r\n", -(p_adv_report->rssi));
+				if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
+				{
+					NRF_GPIO->OUT &= ~(1 << 20);
+				}else
+				{
+					NRF_GPIO->OUT |= (1 << 20);
+				}
+				return;
+
 				uint8_t a = index+2;
 				/************************************************ check origin *********************************************************************/
 
@@ -403,7 +412,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						node_type = ALARM_NODE;
 					}else
 					{
-						if(p_data[a+7] > 1)
+						if((p_data[a+7] > 1) && (p_data[a+8] == 0))
 						{
 							return; // 如果是给alarm的2nd ACK 就不管了	，所以说initmode不要 把这位设置为大于1的数
 						}else
@@ -502,7 +511,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				case CENTER_NODE:
 //					NRF_LOG_INFO("Center node!!! \r\n");
 					/************************************************ update self_level and filt bad signal**********************************************************/
-					if(p_adv_report->rssi >= (-MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
+					if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT_CENTER)) // 可接受的最低信号强度
 					{
 //						self_level = 2;	// for test
 					}else
@@ -514,13 +523,13 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					{
 						self_level = 2; // for test
 						self_report_count_start = true;
+
 						if(init_time_count == 0)
 						{
 							mode = INIT_MODE;
 							init_break_count++;
 							init_time_count++;
 							create_packet = INIT_PACKET;
-							self_report_count_start = true;
 						}else
 						{
 							return;
@@ -571,7 +580,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				case RELAY_NODE:
 					NRF_LOG_INFO("Relay node!!! \r\n");
 					/************************************************ update self_level and filter bad signal**********************************************************/
-					if(p_adv_report->rssi >= (-MINIMUM_SIGNAL_ACCEPT))
+					if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT))
 					{
 						if(p_data[a+4] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 						{
