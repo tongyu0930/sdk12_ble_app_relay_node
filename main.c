@@ -145,7 +145,7 @@ static void relay_init(void)
 
 	init_storage();
 	first_time 				= true;
-	sd_ble_gap_tx_power_set(-20); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
+	sd_ble_gap_tx_power_set(-0); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
 	NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
 }
 
