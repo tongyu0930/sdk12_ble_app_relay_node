@@ -13,15 +13,15 @@
 #include "ble.h"
 #include "nrf.h"
 
-#define 									SELF_NUMBER  					 4
-#define 									REPORT_SENDING_INTERVAL			 20
+#define 									SELF_NUMBER  					 3
+#define 									REPORT_SENDING_INTERVAL			 40
 #define 									INIT_TIME_LENGTH				 5
 #define 									BREAK_AFTER_INIT				 10
-#define 									DELETE_BLOCK_LIST_COUNT			 60
-#define 									ADVERTISING_CHANGE				 60
-#define 									ADVERTISING_LIMIT				 120
-#define 									MINIMUM_SIGNAL_ACCEPT			-100
-#define 									LOOP_PERIOD						 0x008000
+#define 									DELETE_BLOCK_LIST_COUNT			 10
+#define 									ADVERTISING_CHANGE				 20
+#define 									ADVERTISING_LIMIT				 30
+#define 									MINIMUM_SIGNAL_ACCEPT			-90
+#define 									LOOP_PERIOD						 0x008000	//0x008000 is 1 second
 
 		volatile			  uint8_t		self_level 						= 20;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
 extern  volatile 	 		  bool 			first_time;
@@ -36,7 +36,7 @@ extern  volatile 	 		  bool 			first_time;
 				 static		  uint8_t 		datacheck[13];
 				 static		  uint8_t		broadcast_count					= 0;
 				 static		  uint8_t		message_number					= 1;
-				 static		  bool 			level_changed 					= false;
+				 static		  bool 			adv_packet_content_changed 					= false;
 				 static		  bool 			self_report_count_start			= false;
 				 static		  uint8_t		self_report_count				= 0;
 
@@ -49,8 +49,8 @@ volatile static enum
 
 static enum
 {
-    LOWER_LEVEL,
-	HIGHER_LEVEL,
+    HIGH_LEVEL,
+	LOW_LEVEL,
 	SAME_LEVEL
 } node_level;
 
@@ -206,16 +206,10 @@ static void create_self_report(void)
 
 void SWI3_EGU3_IRQHandler(void)
 {
-
-
-//	if(NRF_RTC2->EVENTS_COMPARE[0] != 0)
 	NRF_RTC2->EVENTS_COMPARE[0] = 0;
 	NRF_RTC2->TASKS_CLEAR = 1;
 
-//    if (NRF_EGU3->EVENTS_TRIGGERED[1] != 0)	// 这个if不用要，当有EVENTS_TRIGGERED[2]时才有用
 	NRF_EGU3->EVENTS_TRIGGERED[1] = 0;
-//	(void) NRF_EGU3->EVENTS_TRIGGERED[1]; // 这句不知道干嘛的
-
 
 	if(self_report_count_start)
 	{
@@ -251,9 +245,7 @@ void SWI3_EGU3_IRQHandler(void)
 	/************************************************** loop interval change ******************************************************************************/
 	if(loop%2)			// 就是说scan的时间是不变的，idle 或 broadcast 的时间会有所减小
 	{
-		if(scan_only_mode) { NRF_RTC2->CC[0] = LOOP_PERIOD - (rand()%10000); }
-				   else { NRF_RTC2->CC[0] = LOOP_PERIOD - (rand()%10000); }
-		// TODO: 去掉了变频扫描,最后测电流时再搞，万一不省电再搞回来。
+		NRF_RTC2->CC[0] = LOOP_PERIOD - (rand()%10000);
 	}
 	loop++;
 	if(loop == 250) { loop = 2; }
@@ -291,8 +283,6 @@ void SWI3_EGU3_IRQHandler(void)
 				delete_packet(ack_list);
 				scan_only_mode = false;	// 设为false，在扫描前才会先关闭广播再扫描，要不然就直接扫描了，然后你如果再开启广播就出现错误
 				want_scan = true;
-				//NRF_LOG_INFO("broadcasting confirm list\r\n");
-				//NRF_EGU3->INTENCLR 		= EGU_INTENCLR_TRIGGERED1_Msk;
 			}else
 			{
 				if(broadcast_list->next_storage == NULL)
@@ -305,25 +295,25 @@ void SWI3_EGU3_IRQHandler(void)
 					{
 						copy_data_check = false;
 						broadcast_count++;
-						if((broadcast_count > ADVERTISING_CHANGE) && (level_changed == false))
+						if((broadcast_count > ADVERTISING_CHANGE) && (adv_packet_content_changed == false))
 						{
-							broadcast_list->next_storage->data[6] = self_level + 1;
+							broadcast_list->next_storage->data[9] = 1;
 							broadcast_list->next_storage->data[8] = generate_messsage_number();
 							datacheck[6] = broadcast_list->next_storage->data[6];
-							level_changed = true;
+							adv_packet_content_changed = true;
 							//NRF_LOG_INFO("packet level cahnged\r\n");
 						}
 						if(broadcast_count > ADVERTISING_LIMIT)
 						{
 							delete_packet(broadcast_list); // 如果降级后也没人要的话，这个packet被抛弃了，要不然这辈子就卡在这个packet上了
 							broadcast_count = 0;
-							level_changed = false;
+							adv_packet_content_changed = false;
 							//NRF_LOG_INFO("paceket removed because nobody want this\r\n");
 						}
 					}else
 					{
 						broadcast_count = 0;
-						level_changed = false;
+						adv_packet_content_changed = false;
 						//NRF_LOG_INFO("top of the broadcast list changed\r\n");
 						copy_data_check = true;
 					}
@@ -340,7 +330,7 @@ void SWI3_EGU3_IRQHandler(void)
 					{
 						init_time_count++;
 						broadcast_count = 0; // 为了防治initmode时，initpacket被误以为是发不出去的packet。
-						//level_changed = false; // 你既让不让broadcast count＋＋那这个就不会是true
+						//adv_packet_content_changed = false; // 你既让不让broadcast count＋＋那这个就不会是true
 						if(init_time_count >= INIT_TIME_LENGTH)
 						{
 							mode = NORMAL_MODE;
@@ -408,7 +398,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							node_type = RELAY_NODE;
 							if(p_data[a+4] < self_level)
 							{
-								node_level = LOWER_LEVEL;
+								node_level = HIGH_LEVEL;
 							}else
 							{
 								if(p_data[a+4] == self_level)
@@ -416,7 +406,13 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 									node_level = SAME_LEVEL;
 								}else
 								{
-									node_level = HIGHER_LEVEL;
+									if(p_data[a+4] == self_level + 1)
+									{
+										node_level = LOW_LEVEL;
+									}else
+									{
+										return; // 只接受level＋1的relay node，可能level－1和level－2都收到你的packet，多余了
+									}
 								}
 							}
 						}
@@ -468,7 +464,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					/************************************************ update self_level and filt bad signal**********************************************************/
 					if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT)) // 可接受的最低信号强度
 					{
-//						self_level = 2;	// for test
+//						self_level = 2;	// for test 可以考虑改回来
 					}else
 					{
 						return;
@@ -554,11 +550,12 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						/************************************************ check packet *********************************************************************/
 						switch(node_level)
 						{
-						case LOWER_LEVEL:
+						case HIGH_LEVEL:
 							check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]); // 比较rssi的原因是可能你会同时听见个人摔倒。那比较number和rssi就够了啊！万一rssi一样呢？
 							if(packet_pointer->next_storage == NULL)
 							{
-								return;
+								create_packet = BLOCK_PACKET;
+								//return;
 							}else
 							{
 								delete_packet(packet_pointer);
@@ -580,13 +577,19 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 									return;
 								}else
 								{
-									create_packet = BLOCK_PACKET;
+									if((p_data[a+7] == 1) && (p_data[a+8] != 0))	// this is a help-asking packet
+									{
+										create_packet = BROADCAST_PACKET;	// 帮同级转发
+									}else
+									{
+										create_packet = BLOCK_PACKET;
+									}
 								}
 							}
 							break;
 
-						case HIGHER_LEVEL:
-							if(p_data[a+7] == 1) // 不要管higer发来的ACK，即便对你来说是个新packet，既然higher能发出来ACK说明你同级的人已经再or完成relay了，你就不用好心在加到广播列表了，也不用加入block
+						case LOW_LEVEL:
+							if((p_data[a+7] == 1) && (p_data[a+8] == 0)) // 不要管higer发来的ACK，即便对你来说是个新packet，既然higher能发出来ACK说明你同级的人已经再or完成relay了，你就不用好心在加到广播列表了，也不用加入block
 							{
 								return;
 							}else
