@@ -2,6 +2,7 @@
  * main.c
  *
  *  Author: Tong Yu
+ *  release
  */
 
 // 最后在删减makefile
