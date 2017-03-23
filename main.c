@@ -70,10 +70,10 @@ void advertising_start(void)
 {
     if(self_level == 2)
     {
-    	sd_ble_gap_adv_start(&m_adv_params); // TODO:
+    	sd_ble_gap_adv_start(&m_adv_params);
     }else
     {
-    	sd_ble_gap_adv_start(&m_adv_params);
+    	sd_ble_gap_adv_start(&m_adv_params2);
     }
 }
 
