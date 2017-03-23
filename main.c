@@ -22,7 +22,7 @@
 #include "relay.h"
 #include "nrf_error.h"
 
-#define TX_POWER       					-20 // accepted values are -40, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
+#define TX_POWER       					-0 // accepted values are -40, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
 #define CENTRAL_LINK_COUNT       		0  			/**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
 #define PERIPHERAL_LINK_COUNT    		1  			/**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
 #define IS_SRVC_CHANGED_CHARACT_PRESENT 0 			/**< 不懂Include or not the service_changed characteristic. if not enabled, the server's database cannot be changed for the lifetime of the device*/
@@ -32,7 +32,6 @@
 static bool 							started_bro_sca				= false;
 volatile bool 							first_time					= true;
 extern volatile bool 					want_scan;
-extern volatile uint8_t 				self_level;
 extern volatile bool					scan_only_mode;
 
 
@@ -46,23 +45,13 @@ const ble_gap_adv_params_t m_adv_params =
 	.timeout     					= 0
   };
 
-const ble_gap_adv_params_t m_adv_params2 =
-  {
-	.type        					= BLE_GAP_ADV_TYPE_ADV_NONCONN_IND,					// Undirected advertisement.
-	//.p_peer_addr->addr_type 		= BLE_GAP_ADDR_TYPE_RANDOM_STATIC,
-	.p_peer_addr					= NULL,												// 我觉得null是不是默认就是static的address？
-	.fp          					= BLE_GAP_ADV_FP_ANY,
-	.interval    					= 0x0100,						// 虽然这个最小值时100ms，但是你可以通过timer以更快的频率启动关闭广播。
-	.timeout     					= 0
-  };
-
 const ble_gap_scan_params_t m_scan_params =
   {
     .active      = 0,
     .use_whitelist   = 0,
     .adv_dir_report = 0,
-    .interval    = 0x0040,
-    .window      = 0x0010,
+    .interval    = 0x0640,	// 1 second
+    .window      = 0x0031, 	// 0x0030 is 30ms
     .timeout     = 0
   };
 
@@ -105,15 +94,8 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 void advertising_start(void)
 {
     uint32_t err_code;
-    if(self_level == 2)
-    {
-    	err_code = sd_ble_gap_adv_start(&m_adv_params);
-    	APP_ERROR_CHECK(err_code);
-    }else
-    {
-    	err_code = sd_ble_gap_adv_start(&m_adv_params2);
-    	APP_ERROR_CHECK(err_code);
-    }
+	err_code = sd_ble_gap_adv_start(&m_adv_params);
+	APP_ERROR_CHECK(err_code);
 }
 
 void scanning_start(void)
@@ -123,10 +105,12 @@ void scanning_start(void)
 	{
 		err_code = sd_ble_gap_scan_start(&m_scan_params);
 		APP_ERROR_CHECK(err_code);
+		NRF_LOG_INFO("light scan \r\n");
 	}else
 	{
 		err_code = sd_ble_gap_scan_start(&m_scan_params2);
 		APP_ERROR_CHECK(err_code);
+		NRF_LOG_INFO("heavy scan \r\n");
 	}
 }
 
@@ -300,10 +284,11 @@ static void relay_init(void)
 	NVIC_SetPriority(SWI3_EGU3_IRQn, 7);
 	NVIC_EnableIRQ(SWI3_EGU3_IRQn);
 
-	NRF_GPIO->OUT ^= (1 << 17);
 	init_storage();
-	//first_time 				= true;
-	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
+
+	err_code = sd_ble_gap_scan_start(&m_scan_params2);
+	APP_ERROR_CHECK(err_code);
+	NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
 
 	err_code = sd_ble_gap_tx_power_set(TX_POWER); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
 	APP_ERROR_CHECK(err_code);
