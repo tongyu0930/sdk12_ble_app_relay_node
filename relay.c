@@ -337,7 +337,6 @@ void SWI3_EGU3_IRQHandler(void)
 				if(scan_only_mode)
 				{
 					want_scan = true;
-					//NRF_LOG_INFO("normal mode\r\n");
 					return;
 				}else
 				{
@@ -447,40 +446,6 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						}
 					}
 				}
-
-//				if(p_data[a+4]== 0)
-//				{
-//					node_type = ALARM_NODE;
-//				}else
-//				{
-//					if(p_data[a+7] > 1)
-//					{
-//						return; // 如果是给alarm的2nd ACK 就不管了	，所以说initmode不要 把这位设置为大于1的数
-//					}else
-//					{
-//						if(p_data[a+4]== 1)
-//						if(field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME)
-//						{
-//							node_type = CENTER_NODE;
-//						}else
-//						{
-//							node_type = RELAY_NODE;
-//							if(p_data[a+4] < self_level)
-//							{
-//								node_level = HIGH_LEVEL;
-//							}else
-//							{
-//								if(p_data[a+4] == self_level)
-//								{
-//									node_level = SAME_LEVEL;
-//								}else
-//								{
-//									node_level = LOW_LEVEL;
-//								}
-//							}
-//						}
-//					}
-//				}
 				/************************************************ switch node type *********************************************************************/
 				create_packet = NONE;
 
@@ -528,10 +493,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					{
 //						self_level = 2;	// for test	// 可以改回来
 					}
-//					else
-//					{
-//						return;
-//					}
+
 					/************************************************ mode **********************************************************/
 					if((p_data[a+4] == 0x30) && (p_data[a+5] == 0x31) && (p_data[a+6] == 0x30)
 					&& (p_data[a+7] == 0x30) && (p_data[a+8] == 0x30) && (p_data[a+9] == 0x30)) // “TONG01000000"
@@ -571,33 +533,6 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							create_packet = BLOCK_PACKET;
 						}
 					}
-
-
-
-//					if((p_data[a+5]== 0) && (p_data[a+6]== 0))
-//					{
-//						if(init_time_count == 0)
-//						{
-//							mode = INIT_MODE;
-//							init_break_count++;
-//							init_time_count++;
-//							create_packet = INIT_PACKET;
-//						}else
-//						{
-//							return;
-//						}
-//					}else
-//					{
-//						check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
-//						if(packet_pointer->next_storage == NULL)
-//						{
-//							return;
-//						}else
-//						{
-//							delete_packet(packet_pointer);
-//							create_packet = BLOCK_PACKET;
-//						}
-//					}
 					break;
 
 				case RELAY_NODE:
@@ -618,10 +553,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							return;
 						}
 					} // 这样只有当信号足够强时才更新level，就可以避免信号若有时能收到有时收不到的情况了。
-//					else
-//					{
-//						return;
-//					}
+
 					/************************************************ check mode *********************************************************************/
 					if((p_data[a+5] == 0) && (p_data[a+6] == 0))	// 只要收到一次 就开启init mode， 为了防止你自己到时间停止了，然后别人还没停止，还继续传播init指令，这样你听到指令又进入init模式，没完没了了。
 					{
