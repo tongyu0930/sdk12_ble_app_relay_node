@@ -23,6 +23,7 @@
 #define 									MINIMUM_SIGNAL_ACCEPT			-90
 #define 									MINIMUM_SIGNAL_ACCEPT_CENTER	-90
 #define 									LOOP_PERIOD						 0x008000 //0x008000 is 1 second
+#define 									ALARM_SENDING_TIME				 10
 
 
 		volatile			  uint8_t		self_level 						= 20;	// 这地方会出bug，如果一个人听到的是255，那他自己会把自己设置为256，也就是0了。
@@ -396,6 +397,10 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 //				}
 //				return;
 
+//				NRF_LOG_INFO("in_data = %x\r\n", p_data[index+2]);
+//				p_data[index+2] = 0x55;
+//				NRF_LOG_INFO("in_dfaddata = %x\r\n", p_data[index+2]);
+
 				uint8_t a = index+2;
 				/************************************************ check origin *********************************************************************/
 
@@ -407,7 +412,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				if(field_type == BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME)
 				{
 					node_type = CENTER_NODE;
-				}else
+				}else if (field_type == BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA)
 				{
 					if(p_data[a+4]== 0)
 					{
@@ -489,7 +494,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 					check_list(block_list, 12, p_data[a+7], 1, 0xff);	// data[1] 肯定是 0xff
 					if(packet_pointer->next_storage != NULL)
 					{
-						if(p_data[a+6] > 10) // 如果alarm的count大于10了，再给他ACK
+						if(p_data[a+6] > ALARM_SENDING_TIME) // 如果alarm的count大于10了，再给他ACK
 						{
 							check_list(ack_list, 9, p_data[a+7], 1, 0xff);
 							if(packet_pointer->next_storage == NULL)
@@ -519,16 +524,23 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 				case CENTER_NODE:
 //					NRF_LOG_INFO("Center node!!! \r\n");
 					/************************************************ update self_level and filt bad signal**********************************************************/
-					if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT_CENTER)) // 可接受的最低信号强度
+					if(p_adv_report->rssi >= (MINIMUM_SIGNAL_ACCEPT_CENTER)) // 这样只有当信号足够强时才更新level，就可以避免信号若有时能收到有时收不到的情况了。
 					{
 //						self_level = 2;	// for test	// 可以改回来
-					}else
-					{
-						return;
 					}
+//					else
+//					{
+//						return;
+//					}
 					/************************************************ mode **********************************************************/
-					if((p_data[a+4] == 0x30) && (p_data[a+5] == 0x30)) // “TONG00"
+					if((p_data[a+4] == 0x30) && (p_data[a+5] == 0x31) && (p_data[a+6] == 0x30)
+					&& (p_data[a+7] == 0x30) && (p_data[a+8] == 0x30) && (p_data[a+9] == 0x30)) // “TONG01000000"
 					{
+						if((p_data[a+10] != 0x30) || (p_data[a+11] != 0x30))
+						{
+							return; // 不管center给alarm的ACK
+						}
+
 						self_level = 2; // for test
 						self_report_count_start = true;
 
@@ -544,14 +556,17 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 						}
 					}else
 					{	// TONG01xxxx
-						uint8_t num1 = (p_data[a+4] - 48) * 16 + (p_data[a+5] - 48);
-						uint8_t num2 = (p_data[a+6] - 48) * 16 + (p_data[a+7] - 48);
+						uint8_t num1 = (p_data[a+6] - 48) * 16 + (p_data[a+7] - 48);
+						uint8_t num2 = (p_data[a+8] - 48) * 16 + (p_data[a+9] - 48);
 						check_list(broadcast_list, 7, num1, 8, num2);
 						if(packet_pointer->next_storage == NULL)
 						{
 							return;
 						}else
 						{
+							p_data[a+5] = packet_pointer->next_storage->data[7];
+							p_data[a+6] = packet_pointer->next_storage->data[8];
+							p_data[a+10] = packet_pointer->next_storage->data[12];
 							delete_packet(packet_pointer);
 							create_packet = BLOCK_PACKET;
 						}
@@ -602,10 +617,11 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 							NRF_LOG_INFO("init packet level updated \r\n")
 							return;
 						}
-					}else
-					{
-						return;
-					}
+					} // 这样只有当信号足够强时才更新level，就可以避免信号若有时能收到有时收不到的情况了。
+//					else
+//					{
+//						return;
+//					}
 					/************************************************ check mode *********************************************************************/
 					if((p_data[a+5] == 0) && (p_data[a+6] == 0))	// 只要收到一次 就开启init mode， 为了防止你自己到时间停止了，然后别人还没停止，还继续传播init指令，这样你听到指令又进入init模式，没完没了了。
 					{
@@ -649,6 +665,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 								}
 							}else
 							{
+								p_data[a+10] = packet_pointer->next_storage->data[12];//如果是ack的话，data［12］为空，所以要自己加上
 								delete_packet(packet_pointer);
 								create_packet = BLOCK_PACKET;
 							}

@@ -218,8 +218,8 @@ void GPIOTE_IRQHandler(void)
         manual_init();
     }
 }
-// TODO: 去掉log
-// TODO: 去掉button，去掉delay，去掉了就不能manual init 了
+
+
 static void gpio_configure(void)
 {
 	NRF_GPIO->DIRSET = LEDS_MASK; // set register
@@ -279,6 +279,7 @@ static void gpio_configure(void)
 
 static void relay_init(void)
 {
+	uint32_t err_code;
 	// RTC1
 	NRF_RTC2->TASKS_STOP  = 1;
 	NRF_RTC2->TASKS_CLEAR = 1;
@@ -303,6 +304,10 @@ static void relay_init(void)
 	init_storage();
 	//first_time 				= true;
 	//NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
+
+	err_code = sd_ble_gap_tx_power_set(TX_POWER); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
+	APP_ERROR_CHECK(err_code);
+
 }
 
 /**
@@ -316,8 +321,6 @@ int main(void)
     APP_ERROR_CHECK(err_code);
     NRF_LOG_INFO("###################### System Started ####################\r\n");
     ble_stack_init();
-    err_code = sd_ble_gap_tx_power_set(TX_POWER); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
-    APP_ERROR_CHECK(err_code);
     gpio_configure();
     relay_init();
 
