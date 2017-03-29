@@ -5,7 +5,6 @@
  *  debug
  */
 
-// 最后在删减makefile
 #include <stdbool.h>
 #include <stdint.h>
 #include "ble_advdata.h"
@@ -61,7 +60,7 @@ const ble_gap_scan_params_t m_scan_params2 =
     .use_whitelist   = 0,
     .adv_dir_report = 0,
     .interval    = 0x0040,
-    .window      = 0x0040,
+    .window      = 0x0040, // 这个数值可以小点
     .timeout     = 0
   };
 

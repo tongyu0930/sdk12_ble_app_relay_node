@@ -13,8 +13,8 @@
 #include "app_error.h"
 
 
-#define 									SELF_NUMBER  					 2
-#define 									REPORT_SENDING_INTERVAL			 25
+#define 									SELF_NUMBER  					 4
+#define 									REPORT_SENDING_INTERVAL			 20
 #define 									INIT_TIME_LENGTH				 5
 #define 									BREAK_AFTER_INIT				 10
 #define 									DELETE_BLOCK_LIST_COUNT			 40
@@ -432,7 +432,6 @@ void packet_process(uint8_t *p_data, uint8_t a, int8_t RSSI)
 				return; // 不管center给alarm的ACK
 			}
 
-			self_level = 2; // for test
 			self_report_count_start = true;
 
 			if(init_time_count == 0)
@@ -471,9 +470,12 @@ void packet_process(uint8_t *p_data, uint8_t a, int8_t RSSI)
 		{
 			if(p_data[a+4] < self_level) // rssi 的数值波动也没关系   -100就基本断了 最大－20
 			{
-				self_level = p_data[a+4] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
-				self_report_count_start = true;
-//							NRF_LOG_INFO("self level changed to %d \r\n",self_level)
+				if(self_level < 255)
+				{
+					self_level = p_data[a+4] + 1; // 这主要是为了防治有新的node加入，可能你的level就提升了。
+					self_report_count_start = true;
+//					NRF_LOG_INFO("self level changed to %d \r\n",self_level)
+				}
 			}
 			if(mode == INIT_MODE)
 			{
