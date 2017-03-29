@@ -7,19 +7,14 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include "ble_advdata.h"
 #include "nordic_common.h"
 #include "softdevice_handler.h"
-#include "bsp.h"
 #include "app_timer.h"
 #include "nrf_log.h"
 #include "nrf_log_ctrl.h"
 #include "boards.h"
-#include "app_error.h"
-#include "nrf_delay.h"
 #include "nrf_gpio.h"
 #include "relay.h"
-#include "nrf_error.h"
 
 #define TX_POWER       					-0 // accepted values are -40, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
 #define CENTRAL_LINK_COUNT       		0  			/**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
@@ -28,9 +23,7 @@
 #define DEAD_BEEF                       0xDEADBEEF  /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
 
-static bool 							started_bro_sca				= false;
 volatile bool 							first_time					= true;
-extern volatile bool 					want_scan;
 extern volatile bool					scan_only_mode;
 
 
@@ -92,23 +85,18 @@ void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 
 void advertising_start(void)
 {
-    uint32_t err_code;
-	err_code = sd_ble_gap_adv_start(&m_adv_params);
-	APP_ERROR_CHECK(err_code);
+	sd_ble_gap_adv_start(&m_adv_params);
 }
 
 void scanning_start(void)
 {
-	uint32_t err_code;
 	if(scan_only_mode)
 	{
-		err_code = sd_ble_gap_scan_start(&m_scan_params);
-		APP_ERROR_CHECK(err_code);
+		sd_ble_gap_scan_start(&m_scan_params);
 		NRF_LOG_INFO("light scan \r\n");
 	}else
 	{
-		err_code = sd_ble_gap_scan_start(&m_scan_params2);
-		APP_ERROR_CHECK(err_code);
+		sd_ble_gap_scan_start(&m_scan_params2);
 		NRF_LOG_INFO("heavy scan \r\n");
 	}
 }
@@ -132,21 +120,13 @@ static void ble_evt_dispatch(ble_evt_t * p_ble_evt)
  */
 static void ble_stack_init(void)
 {
-    uint32_t err_code;
     nrf_clock_lf_cfg_t clock_lf_cfg = NRF_CLOCK_LFCLKSRC;
-
     SOFTDEVICE_HANDLER_INIT(&clock_lf_cfg, NULL); 													// Initialize the SoftDevice handler module.
     ble_enable_params_t ble_enable_params;
-    err_code = softdevice_enable_get_default_config(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT, &ble_enable_params);
-    APP_ERROR_CHECK(err_code);
-
+    softdevice_enable_get_default_config(CENTRAL_LINK_COUNT, PERIPHERAL_LINK_COUNT, &ble_enable_params);
     CHECK_RAM_START_ADDR(CENTRAL_LINK_COUNT,PERIPHERAL_LINK_COUNT);									//Check the ram settings against the used number of links
-
-    err_code = softdevice_enable(&ble_enable_params); 												// Enable BLE stack.
-    APP_ERROR_CHECK(err_code);
-
-    err_code = softdevice_ble_evt_handler_set(ble_evt_dispatch); 									// Register with the SoftDevice handler module for BLE events.
-    APP_ERROR_CHECK(err_code);
+    softdevice_enable(&ble_enable_params); 												// Enable BLE stack.
+    softdevice_ble_evt_handler_set(ble_evt_dispatch); 									// Register with the SoftDevice handler module for BLE events.
 }
 
 
@@ -154,52 +134,7 @@ static void ble_stack_init(void)
  */
 static void power_manage(void)
 {
-    uint32_t err_code = sd_app_evt_wait();
-    APP_ERROR_CHECK(err_code);
-}
-
-void GPIOTE_IRQHandler(void)
-{
-    uint32_t err_code;
-
-    if (NRF_GPIOTE->EVENTS_IN[2] != 0) // button2 开启 广播, 还不能完美关闭
-    {
-    	nrf_delay_us(200000);
-        NRF_GPIOTE->EVENTS_IN[2] = 0;
-
-        NRF_GPIO->OUT ^= (1 << 17);
-
-        if(!started_bro_sca)
-		{
-			NRF_LOG_INFO("start scan\r\n");
-			first_time 				= true;
-			NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
-			started_bro_sca 		= true;
-		 }else
-		 {
-			NRF_LOG_INFO("stop broadcast and scan\r\n");
-			NRF_EGU3->INTENCLR 		= EGU_INTENCLR_TRIGGERED1_Msk;
-
-			if(want_scan)
-			{
-				err_code = sd_ble_gap_adv_stop();
-				APP_ERROR_CHECK(err_code);
-			}else
-			{
-				err_code = sd_ble_gap_scan_stop();
-				APP_ERROR_CHECK(err_code);
-			}
-			started_bro_sca = false;
-		 }
-    }
-
-    if (NRF_GPIOTE->EVENTS_IN[3] != 0)		// shift
-    {
-    	nrf_delay_us(200000);
-        NRF_GPIOTE->EVENTS_IN[3] = 0;
-
-        manual_init();
-    }
+    sd_app_evt_wait();
 }
 
 
@@ -207,62 +142,11 @@ static void gpio_configure(void)
 {
 	NRF_GPIO->DIRSET = LEDS_MASK; // set register
 	NRF_GPIO->OUTSET = LEDS_MASK; // clear register
-
-	NRF_GPIO->PIN_CNF[BUTTON_1] = (GPIO_PIN_CNF_DIR_Input     << GPIO_PIN_CNF_DIR_Pos)   |
-								  (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) |
-								  (GPIO_PIN_CNF_PULL_Pullup   << GPIO_PIN_CNF_PULL_Pos);
-
-	NRF_GPIO->PIN_CNF[BUTTON_2] = (GPIO_PIN_CNF_DIR_Input     << GPIO_PIN_CNF_DIR_Pos)   |
-								  (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) |
-								  (GPIO_PIN_CNF_PULL_Pullup   << GPIO_PIN_CNF_PULL_Pos);
-
-	NRF_GPIO->PIN_CNF[BUTTON_3] = (GPIO_PIN_CNF_DIR_Input     << GPIO_PIN_CNF_DIR_Pos)   |
-								  (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) |
-								  (GPIO_PIN_CNF_PULL_Pullup   << GPIO_PIN_CNF_PULL_Pos);
-
-	NRF_GPIO->PIN_CNF[BUTTON_4] = (GPIO_PIN_CNF_DIR_Input     << GPIO_PIN_CNF_DIR_Pos)   |
-								  (GPIO_PIN_CNF_INPUT_Connect << GPIO_PIN_CNF_INPUT_Pos) |
-								  (GPIO_PIN_CNF_PULL_Pullup   << GPIO_PIN_CNF_PULL_Pos);
-
-	nrf_delay_us(5000);																			// Do I have to delay?
-
-//	NRF_GPIOTE->CONFIG[0] = (GPIOTE_CONFIG_MODE_Task       << GPIOTE_CONFIG_MODE_Pos)     |
-//							(GPIOTE_CONFIG_OUTINIT_High    << GPIOTE_CONFIG_OUTINIT_Pos)  |
-//							(GPIOTE_CONFIG_POLARITY_Toggle << GPIOTE_CONFIG_POLARITY_Pos) |
-//							(19                            << GPIOTE_CONFIG_PSEL_Pos);			// 19 is the pin number for testing
-
-	NRF_GPIOTE->CONFIG[1] = (GPIOTE_CONFIG_MODE_Event      << GPIOTE_CONFIG_MODE_Pos)     |
-							(GPIOTE_CONFIG_OUTINIT_Low     << GPIOTE_CONFIG_OUTINIT_Pos)  |
-							(GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos) |
-							(BUTTON_1                      << GPIOTE_CONFIG_PSEL_Pos);
-
-	NRF_GPIOTE->CONFIG[2] = (GPIOTE_CONFIG_MODE_Event      << GPIOTE_CONFIG_MODE_Pos)     |
-							(GPIOTE_CONFIG_OUTINIT_Low     << GPIOTE_CONFIG_OUTINIT_Pos)  |
-							(GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos) |
-							(BUTTON_2                      << GPIOTE_CONFIG_PSEL_Pos);
-
-	// 自己加的
-	NRF_GPIOTE->CONFIG[3] = (GPIOTE_CONFIG_MODE_Event      << GPIOTE_CONFIG_MODE_Pos)     |
-							(GPIOTE_CONFIG_OUTINIT_Low     << GPIOTE_CONFIG_OUTINIT_Pos)  |
-							(GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos) |
-							(BUTTON_3                      << GPIOTE_CONFIG_PSEL_Pos);
-
-	NRF_GPIOTE->CONFIG[4] = (GPIOTE_CONFIG_MODE_Event      << GPIOTE_CONFIG_MODE_Pos)     |
-							(GPIOTE_CONFIG_OUTINIT_Low     << GPIOTE_CONFIG_OUTINIT_Pos)  |
-							(GPIOTE_CONFIG_POLARITY_HiToLo << GPIOTE_CONFIG_POLARITY_Pos) |
-							(BUTTON_4                      << GPIOTE_CONFIG_PSEL_Pos);
-
-	// Interrupt
-	NRF_GPIOTE->INTENSET = GPIOTE_INTENSET_IN1_Msk | GPIOTE_INTENSET_IN2_Msk | GPIOTE_INTENSET_IN3_Msk | GPIOTE_INTENSET_IN4_Msk;
-	NVIC_ClearPendingIRQ(GPIOTE_IRQn);
-	NVIC_SetPriority(GPIOTE_IRQn, APP_IRQ_PRIORITY_LOWEST);
-	NVIC_EnableIRQ(GPIOTE_IRQn);
 }
 
 
 static void relay_init(void)
 {
-	uint32_t err_code;
 	// RTC1
 	NRF_RTC2->TASKS_STOP  = 1;
 	NRF_RTC2->TASKS_CLEAR = 1;
@@ -285,13 +169,10 @@ static void relay_init(void)
 
 	init_storage();
 
-	err_code = sd_ble_gap_scan_start(&m_scan_params2);
-	APP_ERROR_CHECK(err_code);
+	sd_ble_gap_scan_start(&m_scan_params2);
 	NRF_EGU3->INTENSET 		= EGU_INTENSET_TRIGGERED1_Msk;
 
-	err_code = sd_ble_gap_tx_power_set(TX_POWER); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
-	APP_ERROR_CHECK(err_code);
-
+	sd_ble_gap_tx_power_set(TX_POWER); // accepted values are -40, -30, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
 }
 
 /**
@@ -299,10 +180,7 @@ static void relay_init(void)
  */
 int main(void)
 {
-    uint32_t err_code;
-
-    err_code = NRF_LOG_INIT(NULL);
-    APP_ERROR_CHECK(err_code);
+    NRF_LOG_INIT(NULL);
     NRF_LOG_INFO("###################### System Started ####################\r\n");
     ble_stack_init();
     gpio_configure();

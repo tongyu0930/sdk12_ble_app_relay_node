@@ -684,8 +684,6 @@ void packet_creation(uint8_t *p_data, uint8_t a, int8_t RSSI)
 
 void try_advertising(void)
 {
-	uint32_t err_code;
-
 	if(ack_list->next_storage != NULL)	// 如果播报ack时遇上initmode，那也没关系，ack播一次就没了，然后就进入init，进入init时不会在听到其他relay and alarm node的声音了
 	{
 		sd_ble_gap_adv_data_set(ack_list->next_storage->data, sizeof(ack_list->next_storage->data), NULL, 0);
@@ -706,10 +704,8 @@ void try_advertising(void)
 	{
 		if(scan_only_mode == false)
 		{
-			err_code = sd_ble_gap_adv_stop();
-			APP_ERROR_CHECK(err_code);
-			err_code = sd_ble_gap_scan_stop();
-			APP_ERROR_CHECK(err_code);
+			sd_ble_gap_adv_stop();
+			sd_ble_gap_scan_stop();
 			scan_only_mode = true;
 			scanning_start();
 			NRF_GPIO->OUT ^= (1 << 17);
@@ -720,8 +716,7 @@ void try_advertising(void)
 
 	if(scan_only_mode == true)
 	{
-		err_code = sd_ble_gap_scan_stop();
-		APP_ERROR_CHECK(err_code);
+		sd_ble_gap_scan_stop();
 		scan_only_mode = false;
 		scanning_start();
 		advertising_start();
