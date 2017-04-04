@@ -209,14 +209,14 @@ static void create_self_report(void)
 }
 
 
-void SWI3_EGU3_IRQHandler(void)
+void SWI3_EGU3_IRQHandler(void)  // TODO: 改到100ms call一次 或者说你搞两个timer. 改成只有一个advertising list
 {
 	NRF_RTC2->EVENTS_COMPARE[0] 	= 0;
 	NRF_RTC2->TASKS_CLEAR 			= 1;
 	NRF_EGU3->EVENTS_TRIGGERED[1] 	= 0;
 
 	/************************************************** reporting 计数 ******************************************************************************/
-	if(self_report_count_start)
+	if(self_report_count_start) // TODO: 降频到1秒，利用count
 	{
 		self_report_count++;
 		if(self_report_count >= REPORT_SENDING_INTERVAL)
@@ -240,7 +240,7 @@ void SWI3_EGU3_IRQHandler(void)
 	if(scan_only_mode == false)
 	{
 		broadcast_count++;
-		if((broadcast_count > ADVERTISING_CHANGE) && (adv_packet_content_changed == false))
+		if((broadcast_count > ADVERTISING_CHANGE) && (adv_packet_content_changed == false))				// TODO: 去掉同级帮助
 		{
 			broadcast_list->next_storage->data[9] = 1;
 			broadcast_list->next_storage->data[8] = generate_messsage_number();
@@ -367,7 +367,7 @@ void get_adv_data(ble_evt_t * p_ble_evt) // 没必要二进制encode了，都不
 
 			packet_process(p_data, a, RSSI);
 			packet_creation(p_data, a, RSSI);
-			try_advertising();
+			try_advertising();		// 如果是要发送ACK的话，那么接受这肯定是满血搜索状态，所以发一个ACK它也应该可以收到。CenterNode也应该减小ACK的发送时间
 			return;
 		}
 		index += field_length + 1;
@@ -528,8 +528,8 @@ void packet_process(uint8_t *p_data, uint8_t a, int8_t RSSI)
 					}
 				}else
 				{
-					p_data[a+10] = packet_pointer->next_storage->data[12];//如果是ack的话，data［12］为空，所以要自己加上
-					delete_packet(packet_pointer);
+					p_data[a+10] = packet_pointer->next_storage->data[12];//如果是ack的话，data［12］为空，所以要自己加上  然后如果alarmnode在发你就知道是重复的了
+					delete_packet(packet_pointer);						  // 如果你要是move packet到屏蔽列表就不用这一步了 那就改成转移呗，该创建的创建，该转移的转移，用memcopy。
 					create_packet = BLOCK_PACKET;
 				}
 				break;
@@ -552,7 +552,7 @@ void packet_process(uint8_t *p_data, uint8_t a, int8_t RSSI)
 						return;
 					}else
 					{
-						if((p_data[a+7] == 1) && (p_data[a+8] != 0))	// this is a help-asking packet
+						if((p_data[a+7] == 1) && (p_data[a+8] != 0))	// this is a help-asking packet  去掉同级帮助吧，有点复杂，并且也没用
 						{
 							check_list(broadcast_list, 7, p_data[a+5], 8, p_data[a+6]);
 							if(packet_pointer->next_storage == NULL)
@@ -574,7 +574,7 @@ void packet_process(uint8_t *p_data, uint8_t a, int8_t RSSI)
 					return; // 不要管higer发来的ACK，即便对你来说是个新packet，既然higher能发出来ACK说明你同级的人已经再or完成relay了，你就不用好心在加到广播列表了，也不用加入block
 				}else
 				{
-					check_list(block_list, 7, p_data[a+5], 8, p_data[a+6]);
+					check_list(block_list, 7, p_data[a+5], 8, p_data[a+6]); // 我先检查block list主要是为了创建新packet时的指针指向问题
 					if(packet_pointer->next_storage != NULL)
 					{
 						check_list(ack_list, 7, p_data[a+5], 8, p_data[a+6]);
@@ -682,7 +682,7 @@ void packet_creation(uint8_t *p_data, uint8_t a, int8_t RSSI)
 }
 
 
-void try_advertising(void)
+void try_advertising(void)		// not TODO: 让这个方程被call一次100ms，然后去掉创建完packet就call这个函数. 这样的话如果两个node 广播一样的packet，那这个packet就会消失。就应该每次收到packet就try广播
 {
 	if(ack_list->next_storage != NULL)	// 如果播报ack时遇上initmode，那也没关系，ack播一次就没了，然后就进入init，进入init时不会在听到其他relay and alarm node的声音了
 	{
