@@ -16,6 +16,7 @@
 #include "nrf_gpio.h"
 #include "relay.h"
 
+#define LOOP_PERIOD						0x008000 //0x008000 is 1 second
 #define TX_POWER       					-0 // accepted values are -40, -20, -16, -12, -8, -4, 0, 3, and 4 dBm
 #define CENTRAL_LINK_COUNT       		0  			/**< Number of central links used by the application. When changing this number remember to adjust the RAM settings*/
 #define PERIPHERAL_LINK_COUNT    		1  			/**< Number of peripheral links used by the application. When changing this number remember to adjust the RAM settings*/
@@ -52,8 +53,8 @@ const ble_gap_scan_params_t m_scan_params2 =
     .active      = 0,
     .use_whitelist   = 0,
     .adv_dir_report = 0,
-    .interval    = 0x0040,
-    .window      = 0x0040, // 这个数值可以小点
+    .interval    = 0x0020,
+    .window      = 0x0020, // 这个数值可以小点
     .timeout     = 0
   };
 
@@ -151,7 +152,7 @@ static void relay_init(void)
 	NRF_RTC2->TASKS_STOP  = 1;
 	NRF_RTC2->TASKS_CLEAR = 1;
 	NRF_RTC2->PRESCALER   = 0; // 24-bit COUNTER // 12 bit prescaler for COUNTER frequency (32768/(PRESCALER+1))
-	NRF_RTC2->CC[0]       = (0x008000);
+	NRF_RTC2->CC[0]       = LOOP_PERIOD;
 	NRF_RTC2->EVENTS_COMPARE[0] = 0;
 	//NRF_RTC2->SHORTS      = TIMER_SHORTS_COMPARE0_CLEAR_Msk; // 让event_compare register达到cc的值就清零
 	NRF_RTC2->TASKS_START = 1;
